@@ -98,6 +98,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
   const missionPaused = mission.status === "paused";
   const missionComplete = mission.status === "complete";
   const safetyPaused = mission.status === "safety-paused";
+  const playerTeam = state.organization.teams.find((team: { id: string }) => team.id === state.player.teamId);
 
   const handleCompleteMission = () => {
     updateState(completeMission(state));
@@ -108,7 +109,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
     <>
       <div className="gf-context-row">
         <div>
-          <p className="gf-eyebrow">TODAY&apos;S MISSION</p>
+          <p className="gf-eyebrow">SCS SAINTS · {playerTeam?.label ?? "GOALIE DEVELOPMENT"}</p>
           <h1>{missionComplete ? "That’s a stronger crease." : "Build the save before the puck moves."}</h1>
         </div>
         <div className="gf-streak" title="A rest day protects your run">
@@ -266,7 +267,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
           </DialogHeader>
           <div className="gf-reward-reveal">
             <PackageOpen size={34} />
-            <strong>{state.reward?.label ?? "Northstar Mask Finish"}</strong>
+            <strong>{state.reward?.label ?? "Saints Redline Mask Finish"}</strong>
             <span>{state.reward?.type === "duplicate-conversion" ? "You already own this cosmetic, so it became Forge Tokens." : "A new locker cosmetic is ready."}</span>
           </div>
           <DialogFooter className="gf-dialog-footer"><button className="gf-primary-action" type="button" onClick={() => setRewardOpen(false)}>Keep forging <ArrowRight size={17} /></button></DialogFooter>
@@ -287,9 +288,9 @@ function JourneyScreen({ state }: Omit<PlayerScreensProps, "activeTab" | "update
 
   return (
     <>
-      <div className="gf-context-row"><div><p className="gf-eyebrow">YOUR CAREER PATH</p><h1>Every real rep moves the story.</h1></div><StatusPill tone="building"><Map size={13} /> Chapter 1</StatusPill></div>
+      <div className="gf-context-row"><div><p className="gf-eyebrow">SAINTS CREASE PATH</p><h1>Every real rep moves the story.</h1></div><StatusPill tone="building"><Map size={13} /> Chapter 1</StatusPill></div>
       <section className="gf-journey-hero">
-        <div><p className="gf-eyebrow">PROSPECT SHOWCASE</p><h2>Earn the crease call.</h2><p>Show up for the fundamentals. The squad notices goalies who can reset, track, and move with purpose.</p></div>
+        <div><p className="gf-eyebrow">SAINTS GOALIE ROOM</p><h2>Earn the crease call.</h2><p>Show up for the fundamentals. The squad notices goalies who can reset, track, and move with purpose.</p></div>
         <ProgressRing value={progress} label={`${progress}%`} sublabel={`${state.journey.completedSessions}/${state.journey.requiredSessions} sessions`} />
       </section>
       <section className="gf-journey-path" aria-label="Goalie career path">
@@ -332,9 +333,9 @@ function LockerScreen({ state }: Omit<PlayerScreensProps, "activeTab" | "updateS
   return (
     <>
       <div className="gf-context-row"><div><p className="gf-eyebrow">YOUR LOCKER</p><h1>Wear the work you&apos;ve earned.</h1></div><div className="gf-token-count"><Sparkles size={16} /> {state.player.forgeTokens} tokens</div></div>
-      <section className="gf-locker-hero"><div className="gf-mask-display"><span className="gf-mask-glow" /><ShieldAlert size={94} /><span>H</span></div><div><p className="gf-eyebrow">ACTIVE LOOK</p><h2>Northstar Tracker</h2><p>A Prospect-set mask finish. Cosmetics change the look, never the training score.</p><StatusPill tone="building"><Check size={13} /> Equipped</StatusPill></div></section>
+      <section className="gf-locker-hero"><div className="gf-mask-display"><span className="gf-mask-glow" /><ShieldAlert size={94} /><span>H</span></div><div><p className="gf-eyebrow">SAINTS REDLINE SET</p><h2>Saints Tracker</h2><p>A Prospect-set mask finish. Cosmetics change the look, never the training score.</p><StatusPill tone="building"><Check size={13} /> Equipped</StatusPill></div></section>
       <section className="gf-locker-grid">
-        <article className={`gf-locker-item ${maskOwned ? "is-owned" : ""}`}><PackageOpen size={24} /><h3>Northstar Mask Finish</h3><p>{maskOwned ? "Earned in training" : "Complete a Prospect mission"}</p>{maskOwned ? <StatusPill tone="building">Owned</StatusPill> : <StatusPill tone="neutral">Locked</StatusPill>}</article>
+        <article className={`gf-locker-item ${maskOwned ? "is-owned" : ""}`}><PackageOpen size={24} /><h3>Saints Redline Mask Finish</h3><p>{maskOwned ? "Earned in training" : "Complete a Prospect mission"}</p>{maskOwned ? <StatusPill tone="building">Owned</StatusPill> : <StatusPill tone="neutral">Locked</StatusPill>}</article>
         <article className="gf-locker-item is-locked"><LockKeyhole size={24} /><h3>Crease Trail</h3><p>Finish the Prospect chapter.</p><StatusPill tone="neutral">Locked</StatusPill></article>
         <article className="gf-locker-item is-locked"><LockKeyhole size={24} /><h3>Starter Patch</h3><p>Available in a later chapter.</p><StatusPill tone="neutral">Locked</StatusPill></article>
       </section>

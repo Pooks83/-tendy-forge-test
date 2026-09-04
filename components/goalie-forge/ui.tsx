@@ -3,9 +3,9 @@ import type { LucideIcon } from "lucide-react";
 type StatusTone = "building" | "holding" | "attention" | "neutral" | "safety";
 
 const statusClasses: Record<StatusTone, string> = {
-  building: "border-cyan-300/30 bg-cyan-300/10 text-cyan-100",
+  building: "border-red-300/35 bg-red-300/10 text-red-100",
   holding: "border-slate-500/40 bg-slate-500/15 text-slate-200",
-  attention: "border-amber-300/30 bg-amber-300/10 text-amber-100",
+  attention: "border-white/30 bg-white/10 text-white",
   neutral: "border-white/10 bg-white/5 text-slate-300",
   safety: "border-rose-300/30 bg-rose-300/10 text-rose-100",
 };

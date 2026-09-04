@@ -24,6 +24,8 @@ import {
 import {
   acknowledgeSafetyStop,
   createInitialState,
+  getSelectedTeam,
+  getSelectedTeamRoster,
   setCoachFocus,
   setCoachLink,
   updateParentPreferences,
@@ -58,6 +60,7 @@ const scheduleDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function ParentScreen({ state, updateState }: Omit<AdultScreensProps, "role">) {
   const [notice, setNotice] = useState<string | null>(null);
   const schedule = state.parent.schedule as string[];
+  const playerTeam = state.organization.teams.find((team: { id: string }) => team.id === state.player.teamId);
   const toggleDay = (day: string) => {
     const nextSchedule = schedule.includes(day)
       ? schedule.filter((scheduledDay) => scheduledDay !== day)
@@ -68,7 +71,7 @@ function ParentScreen({ state, updateState }: Omit<AdultScreensProps, "role">) {
   return (
     <section className="gf-adult-workspace gf-parent-workspace">
       <div className="gf-adult-heading">
-        <div><p className="gf-eyebrow">HOUSEHOLD CONTROLS</p><h1>Development without pressure.</h1><p>Henry can train, play, and grow. You keep the boundaries in place.</p></div>
+        <div><p className="gf-eyebrow">SCS SAINTS · {playerTeam?.label ?? "GOALIE PROGRAM"}</p><h1>Development without pressure.</h1><p>Henry can train, play, and grow. You keep the boundaries in place.</p></div>
         <StatusPill tone="building"><ShieldCheck size={13} /> Guardian controls active</StatusPill>
       </div>
 
@@ -116,6 +119,9 @@ function ParentScreen({ state, updateState }: Omit<AdultScreensProps, "role">) {
 function CoachScreen({ state, updateState }: Omit<AdultScreensProps, "role">) {
   const [draftFocus, setDraftFocus] = useState(state.coach.focus ?? coachFocuses[0]);
   const [notice, setNotice] = useState<string | null>(null);
+  const activeTeam = getSelectedTeam(state);
+  const visibleRoster = getSelectedTeamRoster(state);
+  const scopeLabel = activeTeam ? `${activeTeam.label} · ${activeTeam.division}` : "All Saints teams";
   const setFeedback = (presetMessage: string) => {
     updateState({ ...state, coach: { ...state.coach, presetMessage } });
     setNotice("Preset feedback is staged for the next summary. No direct child message was sent.");
@@ -132,15 +138,15 @@ function CoachScreen({ state, updateState }: Omit<AdultScreensProps, "role">) {
 
   return (
     <section className="gf-adult-workspace gf-coach-workspace">
-      <div className="gf-adult-heading"><div><p className="gf-eyebrow">COACH CONSOLE</p><h1>See the goalie who needs your eye.</h1><p>Exception-first signals—not activity surveillance or a direct message channel.</p></div><StatusPill tone="building"><UsersRound size={13} /> {state.roster.length} goalies linked</StatusPill></div>
+      <div className="gf-adult-heading"><div><p className="gf-eyebrow">SCS SAINTS COACH CONSOLE · {scopeLabel}</p><h1>{activeTeam ? `${activeTeam.label} goalie room.` : "All Saints goalie rooms."}</h1><p>Exception-first signals—not activity surveillance or a direct message channel.</p></div><StatusPill tone="building"><UsersRound size={13} /> {visibleRoster.length} goalies in view</StatusPill></div>
       <div className="gf-coach-grid">
         <article className="gf-adult-card gf-roster-card">
           <div className="gf-card-heading"><div><p className="gf-eyebrow">ROSTER SIGNALS</p><h2>Start with exceptions</h2></div><IconBadge icon={Eye} tone="cyan" /></div>
-          <div className="gf-roster-list">{state.roster.map((goalie: { id: string; nickname: string; signal: string; detail: string; tone: "attention" | "building" | "holding"; focus: string }) => <div className="gf-roster-row" key={goalie.id}><div className="gf-roster-avatar">{goalie.nickname[0]}</div><div><strong>{goalie.nickname}</strong><span>{goalie.detail}</span></div><StatusPill tone={goalie.tone}>{goalie.signal}</StatusPill></div>)}</div>
+          <div className="gf-roster-list">{visibleRoster.map((goalie: { id: string; nickname: string; teamId: string; signal: string; detail: string; tone: "attention" | "building" | "holding"; focus: string }) => { const team = state.organization.teams.find((candidate: { id: string }) => candidate.id === goalie.teamId); return <div className="gf-roster-row" key={goalie.id}><div className="gf-roster-avatar">{goalie.nickname[0]}</div><div><strong>{goalie.nickname}</strong><span>{goalie.detail}{activeTeam ? "" : ` · ${team?.label ?? "Saints"}`}</span></div><StatusPill tone={goalie.tone}>{goalie.signal}</StatusPill></div>; })}</div>
           <p className="gf-card-note">No body comparisons, medical inferences, or public performance rankings.</p>
         </article>
         <article className="gf-adult-card gf-focus-card">
-          <div className="gf-card-heading"><div><p className="gf-eyebrow">ONE WEEKLY FOCUS</p><h2>Henry&apos;s next safe boundary</h2></div><IconBadge icon={ClipboardCheck} tone="gold" /></div>
+          <div className="gf-card-heading"><div><p className="gf-eyebrow">ONE WEEKLY FOCUS</p><h2>Next safe boundary</h2></div><IconBadge icon={ClipboardCheck} tone="gold" /></div>
           <label className="gf-select-label" htmlFor="coach-focus">Choose a development focus</label>
           <select id="coach-focus" className="gf-focus-select" value={draftFocus} onChange={(event) => setDraftFocus(event.target.value)}>{coachFocuses.map((focus) => <option key={focus} value={focus}>{focus}</option>)}</select>
           <p>Current focus: <strong>{state.coach.focus}</strong></p>

@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Gamepad2, LockKeyhole, RotateCcw, ShieldCheck, UsersRound } from "lucide-react";
+import { Gamepad2, LockKeyhole, RotateCcw, Shield, ShieldCheck, UsersRound } from "lucide-react";
 
-import { createInitialState } from "@/lib/goalie-engine.mjs";
+import { createInitialState, selectOrganizationTeam } from "@/lib/goalie-engine.mjs";
 import { AdultScreens } from "./adult-screens";
 import { PlayerScreens } from "./player-screens";
 
 type Role = "player" | "parent" | "coach";
 
 const playerTabs = ["Today", "Journey", "Progress", "Locker", "Profile"];
+const storageKey = "scs-saints-goalie-forge-demo-state";
 
 export function GoalieForgeApp() {
   const [state, setState] = useState(() => createInitialState());
@@ -19,12 +20,12 @@ export function GoalieForgeApp() {
 
   useEffect(() => {
     const restore = window.requestAnimationFrame(() => {
-      const saved = window.localStorage.getItem("goalie-forge-demo-state");
+      const saved = window.localStorage.getItem(storageKey);
       if (saved) {
         try {
-          setState(JSON.parse(saved));
+          setState(createInitialState(JSON.parse(saved)));
         } catch {
-          window.localStorage.removeItem("goalie-forge-demo-state");
+          window.localStorage.removeItem(storageKey);
         }
       }
       setHydrated(true);
@@ -34,14 +35,14 @@ export function GoalieForgeApp() {
 
   useEffect(() => {
     if (hydrated) {
-      window.localStorage.setItem("goalie-forge-demo-state", JSON.stringify(state));
+      window.localStorage.setItem(storageKey, JSON.stringify(state));
     }
   }, [hydrated, state]);
 
   const resetDemo = () => {
     const next = createInitialState();
     setState(next);
-    window.localStorage.setItem("goalie-forge-demo-state", JSON.stringify(next));
+    window.localStorage.setItem(storageKey, JSON.stringify(next));
   };
 
   const selectRole = (nextRole: Role) => {
@@ -49,14 +50,16 @@ export function GoalieForgeApp() {
     if (nextRole === "player") setActiveTab("Today");
   };
 
+  const playerTeam = state.organization.teams.find((team: { id: string }) => team.id === state.player.teamId);
+
   return (
     <main className="gf-app-shell">
       <div className="gf-ambient gf-ambient-left" />
       <div className="gf-ambient gf-ambient-right" />
       <header className="gf-topbar">
-        <div className="gf-brand" aria-label="Goalie Forge">
-          <span className="gf-brand-mark" aria-hidden="true"><Gamepad2 size={18} /></span>
-          <span>GOALIE <b>FORGE</b></span>
+        <div className="gf-brand" aria-label="SCS Saints Goalie Forge">
+          <span className="gf-brand-mark" aria-hidden="true"><Shield size={18} /></span>
+          <span className="gf-brand-wordmark"><small>SCS Saints</small><span>GOALIE <b>FORGE</b></span></span>
         </div>
         <div className="gf-role-switch" aria-label="Choose workspace">
           <button className={role === "player" ? "is-active" : ""} onClick={() => selectRole("player")}>
@@ -69,9 +72,22 @@ export function GoalieForgeApp() {
             <UsersRound size={15} /> Coach
           </button>
         </div>
-        <button className="gf-reset" onClick={resetDemo} aria-label="Reset demo state">
-          <RotateCcw size={15} /> <span>Reset demo</span>
-        </button>
+        <div className="gf-topbar-actions">
+          {role === "coach" ? (
+            <label className="gf-team-scope">
+              <span>Coach team view</span>
+              <select value={state.organization.activeTeamId} onChange={(event) => setState(selectOrganizationTeam(state, event.target.value))} aria-label="Choose Saints team">
+                <option value="all">All Saints teams</option>
+                {state.organization.teams.map((team: { id: string; label: string; division: string }) => <option key={team.id} value={team.id}>{team.label} · {team.division}</option>)}
+              </select>
+            </label>
+          ) : (
+            <div className="gf-player-team-chip"><ShieldCheck size={14} /><span>{playerTeam?.label ?? "Saints goalie"}</span></div>
+          )}
+          <button className="gf-reset" onClick={resetDemo} aria-label="Reset demo state">
+            <RotateCcw size={15} /> <span>Reset demo</span>
+          </button>
+        </div>
       </header>
 
       {role === "player" ? (
@@ -107,7 +123,7 @@ export function GoalieForgeApp() {
         </div>
       ) : <AdultScreens role={role} state={state} updateState={setState} />}
 
-      <p className="gf-prototype-note">Private prototype demo · Device-local state only · No real child data or account access.</p>
+      <p className="gf-prototype-note">SCS Saints · Organization-wide goalie development · Private prototype demo · Device-local state only · No real child data or account access.</p>
     </main>
   );
 }

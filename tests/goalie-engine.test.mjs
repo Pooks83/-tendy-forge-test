@@ -12,6 +12,7 @@ import {
   startMission,
   toggleMissionPause,
 } from "../lib/goalie-engine.mjs";
+import * as goalieEngine from "../lib/goalie-engine.mjs";
 
 test("mission completion caps awarded XP at prescribed mission XP", () => {
   const next = completeMission(createInitialState());
@@ -70,4 +71,23 @@ test("removing a coach link revokes access immediately", () => {
   const next = setCoachLink(createInitialState(), false);
 
   assert.equal(next.coach.linked, false);
+});
+
+test("Saints team selection changes the active organization context", () => {
+  const selectOrganizationTeam = goalieEngine.selectOrganizationTeam ?? ((state) => state);
+  const next = selectOrganizationTeam(createInitialState(), "2016-aa");
+
+  assert.equal(next.organization?.name, "St. Clair Shores Saints");
+  assert.equal(next.organization?.activeTeamId, "2016-aa");
+});
+
+test("coach roster shows only the goalies on the active Saints team", () => {
+  const selectOrganizationTeam = goalieEngine.selectOrganizationTeam ?? ((state) => state);
+  const selected = selectOrganizationTeam(createInitialState(), "2016-aa");
+  const getSelectedTeamRoster = goalieEngine.getSelectedTeamRoster ?? (() => []);
+
+  assert.deepEqual(
+    getSelectedTeamRoster(selected).map((goalie) => goalie.nickname),
+    ["Mia", "Nate"],
+  );
 });

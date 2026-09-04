@@ -33,6 +33,8 @@ test("renders development preview metadata", async () => {
 
   assert.match(html, developmentPreviewMeta);
   assert.match(html, /Goalie Forge/);
+  assert.match(html, /SCS Saints/);
+  assert.match(html, /Organization-wide goalie development/i);
   assert.match(html, /Real-world training game for youth hockey goalies/i);
   assert.match(html, /Start mission/);
 });

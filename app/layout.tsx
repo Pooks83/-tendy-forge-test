@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Goalie Forge | Real-world training game for youth hockey goalies",
-  description: "A real-world training game for youth hockey goalies, built around safe off-ice development.",
+  title: "Goalie Forge | SCS Saints Goalie Development",
+  description: "A real-world training game for youth hockey goalies, built for safe off-ice development across the St. Clair Shores Saints organization.",
   other: {
     "codex-preview": "development",
   },
