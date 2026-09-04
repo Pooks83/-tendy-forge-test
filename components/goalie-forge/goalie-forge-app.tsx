@@ -107,7 +107,7 @@ export function GoalieForgeApp() {
         </div>
       ) : <AdultScreens role={role} state={state} updateState={setState} />}
 
-      <p className="gf-prototype-note">Prototype demo · Device-local state only · No real child data or account access.</p>
+      <p className="gf-prototype-note">Private prototype demo · Device-local state only · No real child data or account access.</p>
     </main>
   );
 }
