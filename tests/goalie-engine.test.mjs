@@ -7,6 +7,8 @@ import {
   completeMission,
   createInitialState,
   reportSafetyStop,
+  setCoachFocus,
+  setCoachLink,
   startMission,
   toggleMissionPause,
 } from "../lib/goalie-engine.mjs";
@@ -55,4 +57,17 @@ test("mission player can start, pause, resume and complete an activity", () => {
   assert.equal(paused.mission.status, "paused");
   assert.equal(resumed.mission.status, "active");
   assert.equal(completed.mission.activities[0].complete, true);
+});
+
+test("coach focus is staged at the next safe mission boundary", () => {
+  const next = setCoachFocus(createInitialState(), "Rebound control");
+
+  assert.equal(next.coach.focus, "Rebound control");
+  assert.equal(next.mission.nextBoundaryFocus, "Rebound control");
+});
+
+test("removing a coach link revokes access immediately", () => {
+  const next = setCoachLink(createInitialState(), false);
+
+  assert.equal(next.coach.linked, false);
 });

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Gamepad2, LockKeyhole, RotateCcw, ShieldCheck, UsersRound } from "lucide-react";
 
 import { createInitialState } from "@/lib/goalie-engine.mjs";
+import { AdultScreens } from "./adult-screens";
 import { PlayerScreens } from "./player-screens";
 
 type Role = "player" | "parent" | "coach";
@@ -101,14 +102,7 @@ export function GoalieForgeApp() {
             <PlayerScreens activeTab={activeTab as "Today" | "Journey" | "Progress" | "Locker" | "Profile"} state={state} updateState={setState} />
           </section>
         </div>
-      ) : (
-        <section className="gf-adult-placeholder">
-          <IconBadge icon={role === "parent" ? ShieldCheck : UsersRound} tone={role === "parent" ? "gold" : "cyan"} />
-          <p className="gf-eyebrow">{role === "parent" ? "HOUSEHOLD CONTROLS" : "COACH CONSOLE"}</p>
-          <h1>{role === "parent" ? "Development without pressure." : "See the goalie who needs your eye."}</h1>
-          <p>Role-specific controls are connected in the next product slice.</p>
-        </section>
-      )}
+      ) : <AdultScreens role={role} state={state} updateState={setState} />}
 
       <p className="gf-prototype-note">Prototype demo · Device-local state only · No real child data or account access.</p>
     </main>
