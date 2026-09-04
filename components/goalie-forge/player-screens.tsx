@@ -6,13 +6,10 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
-  CirclePause,
-  CirclePlay,
   Dumbbell,
   Eye,
   Flame,
   Footprints,
-  Gamepad2,
   HeartPulse,
   LockKeyhole,
   Map,
@@ -24,7 +21,6 @@ import {
   Sparkles,
   Target,
   Trophy,
-  X,
 } from "lucide-react";
 
 import {
@@ -128,7 +124,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
             <h2>Good call. Tell your parent or guardian now.</h2>
             <p>Your run is protected. Training can wait until a parent checks in.</p>
           </div>
-          <span className="gf-safety-status"><LockKeyhole size={14} /> Parent action needed</span>
+          <span className="gf-safety-status"><LockKeyhole size={14} /> {state.parentActionRequired ? "Parent action needed" : "Recovery plan protected"}</span>
         </section>
       ) : (
         <section className="gf-mission-hero">

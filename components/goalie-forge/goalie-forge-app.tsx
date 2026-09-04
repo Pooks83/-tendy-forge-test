@@ -18,15 +18,18 @@ export function GoalieForgeApp() {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem("goalie-forge-demo-state");
-    if (saved) {
-      try {
-        setState(JSON.parse(saved));
-      } catch {
-        window.localStorage.removeItem("goalie-forge-demo-state");
+    const restore = window.requestAnimationFrame(() => {
+      const saved = window.localStorage.getItem("goalie-forge-demo-state");
+      if (saved) {
+        try {
+          setState(JSON.parse(saved));
+        } catch {
+          window.localStorage.removeItem("goalie-forge-demo-state");
+        }
       }
-    }
-    setHydrated(true);
+      setHydrated(true);
+    });
+    return () => window.cancelAnimationFrame(restore);
   }, []);
 
   useEffect(() => {

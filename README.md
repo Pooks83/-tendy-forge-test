@@ -1,6 +1,21 @@
-# vinext-starter
+# Goalie Forge
 
-A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.
+Goalie Forge is a responsive product prototype for youth hockey goalies’ off-ice development. It turns planned, real-world practice into safe mission progression—without public profiles, rankings, ads, spending, or coach-to-child direct messaging.
+
+## Included experience
+
+- Player training loop: mission start, pause, safe activity completion, no-equipment substitutions, safety interruption, reward conversion, story journey, progress board, locker, and protected profile.
+- Parent controls: training schedule, quiet hours, summaries, coach access approval/revocation, safety decision, and privacy/data action prototypes.
+- Coach console: exception-first roster signals, one focus staged for a safe mission boundary, and preset-only feedback.
+- Device-local demo state only. No real accounts, child data, camera, uploads, payments, ads, or social features are implemented.
+
+## Run locally
+
+- `npm run dev` starts the local development server.
+- `npm test` builds the app and runs the rules and rendering tests.
+- `npm run build` creates the deployable artifact.
+
+## Prerequisites
 
 ## Prerequisites
 
