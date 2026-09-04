@@ -1,21 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  ChevronRight,
-  CircleHelp,
-  Flame,
-  Gamepad2,
-  LockKeyhole,
-  Play,
-  RotateCcw,
-  ShieldCheck,
-  Sparkles,
-  UsersRound,
-} from "lucide-react";
+import { Gamepad2, LockKeyhole, RotateCcw, ShieldCheck, UsersRound } from "lucide-react";
 
 import { createInitialState } from "@/lib/goalie-engine.mjs";
-import { IconBadge, ProgressRing, StatusPill } from "./ui";
+import { PlayerScreens } from "./player-screens";
 
 type Role = "player" | "parent" | "coach";
 
@@ -55,8 +44,6 @@ export function GoalieForgeApp() {
     setRole(nextRole);
     if (nextRole === "player") setActiveTab("Today");
   };
-
-  const mission = state.mission;
 
   return (
     <main className="gf-app-shell">
@@ -111,71 +98,7 @@ export function GoalieForgeApp() {
           </aside>
 
           <section className="gf-workspace">
-            {activeTab === "Today" ? (
-              <>
-                <div className="gf-context-row">
-                  <div>
-                    <p className="gf-eyebrow">TODAY&apos;S MISSION</p>
-                    <h1>Build the save before the puck moves.</h1>
-                  </div>
-                  <div className="gf-streak">
-                    <Flame size={18} /> <strong>{state.player.streak}</strong><span>day run</span>
-                  </div>
-                </div>
-
-                <section className="gf-mission-hero">
-                  <div className="gf-mission-hero-copy">
-                    <StatusPill tone="building"><Sparkles size={13} /> Prospect Chapter 1</StatusPill>
-                    <h2>{mission.title}</h2>
-                    <p>{mission.storyStakes}</p>
-                    <div className="gf-mission-meta">
-                      <span>{mission.duration} min</span>
-                      <span>{mission.activities.length} activities</span>
-                      <span>{mission.xpCap} max XP</span>
-                    </div>
-                    <button className="gf-primary-action" type="button">
-                      <Play size={18} fill="currentColor" /> Start mission <ChevronRight size={17} />
-                    </button>
-                  </div>
-                  <div className="gf-mission-hero-meter">
-                    <ProgressRing value={71} label="71%" sublabel="Mission ready" />
-                    <p><strong>Tracking</strong> is your best chance to grow today.</p>
-                  </div>
-                </section>
-
-                <section className="gf-panel-grid">
-                  <article className="gf-panel">
-                    <div className="gf-panel-heading">
-                      <div><p className="gf-eyebrow">MISSION PLAN</p><h3>Train with purpose</h3></div>
-                      <CircleHelp size={18} aria-label="Each activity has setup and safety cues" />
-                    </div>
-                    <div className="gf-activity-list">
-                      {mission.activities.map((activity: { id: string; name: string; attribute: string; duration: number; equipment: string }) => (
-                        <div className="gf-activity" key={activity.id}>
-                          <IconBadge icon={activity.attribute === "Mindset" ? Sparkles : Gamepad2} tone={activity.attribute === "Mindset" ? "gold" : "cyan"} />
-                          <div><strong>{activity.name}</strong><span>{activity.attribute} · {activity.duration} min · {activity.equipment}</span></div>
-                          <ChevronRight size={18} />
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                  <article className="gf-panel gf-next-up">
-                    <p className="gf-eyebrow">NEXT UNLOCK</p>
-                    <h3>Earn the crease call.</h3>
-                    <p>Complete 2 more planned sessions to unlock your first game-night story moment.</p>
-                    <div className="gf-mini-progress"><span style={{ width: "60%" }} /></div>
-                    <small>3 of 5 planned sessions</small>
-                  </article>
-                </section>
-              </>
-            ) : (
-              <section className="gf-placeholder-panel">
-                <IconBadge icon={Sparkles} tone="cyan" />
-                <p className="gf-eyebrow">{activeTab.toUpperCase()}</p>
-                <h2>{activeTab} is ready to forge.</h2>
-                <p>This working area is connected in the next product slice.</p>
-              </section>
-            )}
+            <PlayerScreens activeTab={activeTab as "Today" | "Journey" | "Progress" | "Locker" | "Profile"} state={state} updateState={setState} />
           </section>
         </div>
       ) : (
