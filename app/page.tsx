@@ -1,5 +1,5 @@
-import { GoalieForgeApp } from "@/components/goalie-forge/goalie-forge-app";
+import { TrainingApp } from "@/components/goalie-forge/training-app";
 
 export default function Home() {
-  return <GoalieForgeApp />;
+  return <TrainingApp />;
 }

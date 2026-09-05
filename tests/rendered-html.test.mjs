@@ -1,42 +1,43 @@
-import assert from "node:assert/strict";
-import test from "node:test";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {readFile} from 'node:fs/promises';
+import {Miniflare} from 'miniflare';
 
-const developmentPreviewMeta =
-  /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
-
-test("renders development preview metadata", async () => {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  const response = await worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-
-  assert.equal(response.status, 200);
-  assert.match(
-    response.headers.get("content-type") ?? "",
-    /^text\/html\b/i,
-  );
-  const html = await response.text();
-
-  assert.match(html, developmentPreviewMeta);
-  assert.match(html, /Goalie Forge/);
-  assert.match(html, /SCS Saints/);
-  assert.match(html, /Organization-wide goalie development/i);
-  assert.match(html, /Real-world training game for youth hockey goalies/i);
-  assert.match(html, /Start today(?:’|'|&#x27;)s training/i);
-  assert.match(html, /Level 1: Protect the Crease/i);
-  assert.match(html, /2 drills left today/i);
+test('built worker renders training and isolates durable profiles and coach permissions',async()=>{
+ const mf=new Miniflare({modules:true,scriptPath:new URL('../dist/server/index.js',import.meta.url).pathname,modulesRules:[{type:'ESModule',include:['**/*.js','**/*.mjs'],fallthrough:true}],compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB']});
+ try {
+  const db=await mf.getD1Database('DB');
+  const sql=await readFile(new URL('../drizzle/0000_slow_hellion.sql',import.meta.url),'utf8');
+  for(const statement of sql.split('--> statement-breakpoint'))if(statement.trim())await db.prepare(statement.trim()).run();
+  const call=async(user,body,origin='http://localhost')=>{
+   const headers={...(user?{'oai-authenticated-user-id':user,'oai-authenticated-user-email':user+'@example.test'}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{})};
+   const r=await mf.dispatchFetch('http://localhost/api/training',{headers,...(body?{method:'POST',body:JSON.stringify(body)}:{})});
+   return {status:r.status,data:await r.json()};
+  };
+  const page=await mf.dispatchFetch('http://localhost/',{headers:{accept:'text/html'}});
+  assert.equal(page.status,200);const html=await page.text();
+  assert.match(html,/aria-label="Main navigation"/);
+  assert.match(html,/id="training-main"/);
+  assert.match(html,/<meta(?=[^>]*name="codex-preview")(?=[^>]*content="development")/);
+  assert.equal((await call(null)).status,401);
+  assert.equal((await call('owner',{type:'create'},'http://evil.test')).status,403);
+  const created=await call('owner',{type:'create',nickname:'Test goalie',team:'Test team',ageBand:'10–12',adultConfirmed:true});
+  assert.equal(created.status,201);const profileId=created.data.id;
+  assert.equal((await call('other')).data.profiles.length,0);
+  assert.equal((await call('other',{type:'export',profileId})).status,404);
+  assert.equal((await call('owner',{type:'action',profileId,revision:0,action:{type:'set',drillId:'warm',setIndex:0}})).status,200);
+  const saved=await call('owner');assert.equal(saved.data.profiles[0].state.sets['foundation:0:0:warm:0'],true);
+  assert.equal((await call('owner',{type:'action',profileId,revision:0,action:{type:'stop'}})).status,409);
+  assert.equal((await call('owner',{type:'share',profileId,email:'coach@example.test'})).status,200);
+  assert.equal((await call('coach')).data.profiles[0].role,'coach');
+  assert.equal((await call('coach',{type:'action',profileId,revision:1,action:{type:'set',drillId:'warm',setIndex:1}})).status,403);
+  assert.equal((await call('coach',{type:'delete',profileId})).status,403);
+  assert.equal((await call('coach',{type:'action',profileId,revision:1,action:{type:'check',group:'Move',passed:true,note:'Five of six steps ended balanced.'}})).status,200);
+  assert.equal((await call('owner',{type:'revoke',profileId,email:'coach@example.test'})).status,200);
+  assert.equal((await call('coach')).data.profiles.length,0);
+  assert.equal((await call('coach',{type:'export',profileId})).status,404);
+  assert.equal((await call('owner',{type:'export',profileId})).data.training.checks.length,1);
+  assert.equal((await call('owner',{type:'delete',profileId})).status,200);
+  assert.equal((await call('owner')).data.profiles.length,0);
+ } finally {await mf.dispose();}
 });

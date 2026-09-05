@@ -56,6 +56,12 @@ test("forwards progress semantics to the primitive", async () => {
   assert.match(html, /aria-valuetext="37%"/);
   assert.match(html, /data-state="loading"/);
 });
+test('training save feedback exposes the error and reload action, and stays absent without an error',async()=>{
+ const {TrainingSaveError}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
+ const html=renderToStaticMarkup(React.createElement(TrainingSaveError,{message:'Progress changed on another device.',onReload:()=>{}}));
+ assert.match(html,/role="alert"/);assert.match(html,/Progress changed on another device/);assert.match(html,/<button/);
+ assert.equal(renderToStaticMarkup(React.createElement(TrainingSaveError,{message:'',onReload:()=>{}})),'');
+});
 
 test("emits chart themes for the starter's media dark mode", async () => {
   const { ChartStyle } = await vite.ssrLoadModule("/components/ui/chart.tsx");
