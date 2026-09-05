@@ -62,6 +62,16 @@ test('training save feedback exposes the error and reload action, and stays abse
  assert.match(html,/role="alert"/);assert.match(html,/Progress changed on another device/);assert.match(html,/<button/);
  assert.equal(renderToStaticMarkup(React.createElement(TrainingSaveError,{message:'',onReload:()=>{}})),'');
 });
+test('adult authentication starts from server-rendered top-level links',async()=>{
+  const {AdultSignInLink,AdultSignOutLink}=await vite.ssrLoadModule('/components/goalie-forge/auth-links.tsx');
+  const signIn=renderToStaticMarkup(React.createElement(AdultSignInLink));
+  const signOut=renderToStaticMarkup(React.createElement(AdultSignOutLink));
+  assert.match(signIn,/href="\/signin-with-chatgpt\?return_to=%2F"/);
+  assert.match(signIn,/target="_top"/);
+  assert.match(signIn,/Adult sign-in/);
+  assert.match(signOut,/href="\/signout-with-chatgpt\?return_to=%2F"/);
+  assert.match(signOut,/target="_top"/);
+});
 
 test("emits chart themes for the starter's media dark mode", async () => {
   const { ChartStyle } = await vite.ssrLoadModule("/components/ui/chart.tsx");
