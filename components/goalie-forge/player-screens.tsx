@@ -43,7 +43,7 @@ import {
 import { IconBadge, ProgressRing, StatusPill } from "./ui";
 
 type ForgeState = ReturnType<typeof createInitialState>;
-type PlayerTab = "Today" | "Journey" | "Progress" | "Locker" | "Profile";
+type PlayerTab = "Home" | "Train" | "Progress" | "Profile";
 
 type PlayerScreensProps = {
   activeTab: PlayerTab;
@@ -75,12 +75,12 @@ function MissionStatus({ state }: { state: ForgeState }) {
     <div className="gf-mission-hero-meter">
       <ProgressRing
         value={isReady ? 71 : state.mission.status === "complete" ? 100 : percent}
-        label={isReady ? "71%" : `${percent}%`}
-        sublabel={isReady ? "Mission ready" : `${completed} of ${total} complete`}
+        label={isReady ? "2" : `${total - completed}`}
+        sublabel="drills left"
       />
       <p>
         <strong>Tracking</strong>{" "}
-        {isReady ? "is your best chance to grow today." : "is getting sharper with every rep."}
+        {isReady ? "Start small. Feel ready in net." : "Every finished drill makes game day feel easier."}
       </p>
     </div>
   );
@@ -110,7 +110,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
       <div className="gf-context-row">
         <div>
           <p className="gf-eyebrow">SCS SAINTS · {playerTeam?.label ?? "GOALIE DEVELOPMENT"}</p>
-          <h1>{missionComplete ? "That’s a stronger crease." : "Build the save before the puck moves."}</h1>
+          <h1>{missionComplete ? "Nice work. Your crease is stronger." : "Ready to get better today?"}</h1>
         </div>
         <div className="gf-streak" title="A rest day protects your run">
           <Flame size={18} /> <strong>{state.player.streak}</strong><span>day run</span>
@@ -131,24 +131,24 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
         <section className="gf-mission-hero">
           <div className="gf-mission-hero-copy">
             <StatusPill tone={missionComplete ? "building" : "building"}>
-              <Sparkles size={13} /> {missionComplete ? "Mission complete" : "Prospect Chapter 1"}
+              <Sparkles size={13} /> {missionComplete ? "Training complete" : "Level 1: Protect the Crease"}
             </StatusPill>
-            <h2>{mission.title}</h2>
-            <p>{missionComplete ? "The Prospect Showcase noticed your preparation. Keep building the habits that make saves feel calmer." : mission.storyStakes}</p>
+            <h2>{missionComplete ? "You finished today's training." : "Today's goalie session"}</h2>
+            <p>{missionComplete ? "Come back tomorrow and keep stacking great goalie habits." : "A few focused reps to help you see the puck, move well, and feel ready in net."}</p>
             <div className="gf-mission-meta">
               <span>{mission.duration} min</span>
               <span>{mission.activities.length} activities</span>
-              <span>{mission.xpCap} max XP</span>
+              <span>{completedActivities === mission.activities.length ? "All drills done" : `${Math.max(0, mission.activities.length - completedActivities - 2)} warm-up drills`}</span>
             </div>
             {mission.status === "ready" ? (
               <button className="gf-primary-action" type="button" onClick={() => updateState(startMission(state))}>
-                <Play size={18} fill="currentColor" /> Start mission <ChevronRight size={17} />
+                <Play size={18} fill="currentColor" /> Start today&apos;s training <ChevronRight size={17} />
               </button>
             ) : null}
             {missionActive ? (
               <div className="gf-mission-actions">
                 <button className="gf-secondary-action" type="button" onClick={() => updateState(toggleMissionPause(state))}>
-                  <Pause size={16} /> Pause mission
+                  <Pause size={16} /> Pause training
                 </button>
                 <button className="gf-text-action gf-safety-link" type="button" onClick={() => setSafetyOpen(true)}>
                   Not feeling right?
@@ -158,7 +158,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
             {missionPaused ? (
               <div className="gf-mission-actions">
                 <button className="gf-primary-action" type="button" onClick={() => updateState(toggleMissionPause(state))}>
-                  <Play size={17} fill="currentColor" /> Resume mission
+                  <Play size={17} fill="currentColor" /> Resume training
                 </button>
                 <button className="gf-text-action gf-safety-link" type="button" onClick={() => setSafetyOpen(true)}>
                   End physical work
@@ -167,7 +167,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
             ) : null}
             {missionActive && allActivitiesComplete ? (
               <button className="gf-primary-action gf-finish-action" type="button" onClick={handleCompleteMission}>
-                <Trophy size={18} /> Finish &amp; forge reward <ArrowRight size={17} />
+                <Trophy size={18} /> Finish &amp; collect reward <ArrowRight size={17} />
               </button>
             ) : null}
           </div>
@@ -178,7 +178,7 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
       <section className="gf-panel-grid">
         <article className="gf-panel">
           <div className="gf-panel-heading">
-            <div><p className="gf-eyebrow">MISSION PLAN</p><h3>{missionActive ? "Own each rep" : missionComplete ? "Reps complete" : "Train with purpose"}</h3></div>
+            <div><p className="gf-eyebrow">YOUR DRILLS</p><h3>{missionActive ? "Keep going" : missionComplete ? "All done for today" : "2 drills left today"}</h3></div>
             <span className="gf-activity-count">{completedActivities}/{mission.activities.length}</span>
           </div>
           <div className="gf-activity-list">
@@ -201,9 +201,9 @@ function TodayScreen({ state, updateState }: Omit<PlayerScreensProps, "activeTab
           </div>
         </article>
         <article className="gf-panel gf-next-up">
-          <p className="gf-eyebrow">NEXT UNLOCK</p>
-          <h3>{state.journey.nextUnlock}.</h3>
-          <p>Complete {Math.max(0, state.journey.requiredSessions - state.journey.completedSessions)} more planned session{state.journey.requiredSessions - state.journey.completedSessions === 1 ? "" : "s"} to unlock your first game-night story moment.</p>
+          <p className="gf-eyebrow">NEXT REWARD</p>
+          <h3>Unlock the Saints Redline mask.</h3>
+          <p>Finish two more training days and it is yours to wear in your locker.</p>
           <div className="gf-mini-progress"><span style={{ width: `${(state.journey.completedSessions / state.journey.requiredSessions) * 100}%` }} /></div>
           <small>{state.journey.completedSessions} of {state.journey.requiredSessions} planned sessions</small>
         </article>
@@ -328,21 +328,6 @@ function ProgressScreen({ state }: Omit<PlayerScreensProps, "activeTab" | "updat
   );
 }
 
-function LockerScreen({ state }: Omit<PlayerScreensProps, "activeTab" | "updateState">) {
-  const maskOwned = state.player.ownedRewardIds.includes("mask-northstar");
-  return (
-    <>
-      <div className="gf-context-row"><div><p className="gf-eyebrow">YOUR LOCKER</p><h1>Wear the work you&apos;ve earned.</h1></div><div className="gf-token-count"><Sparkles size={16} /> {state.player.forgeTokens} tokens</div></div>
-      <section className="gf-locker-hero"><div className="gf-mask-display"><span className="gf-mask-glow" /><ShieldAlert size={94} /><span>H</span></div><div><p className="gf-eyebrow">SAINTS REDLINE SET</p><h2>Saints Tracker</h2><p>A Prospect-set mask finish. Cosmetics change the look, never the training score.</p><StatusPill tone="building"><Check size={13} /> Equipped</StatusPill></div></section>
-      <section className="gf-locker-grid">
-        <article className={`gf-locker-item ${maskOwned ? "is-owned" : ""}`}><PackageOpen size={24} /><h3>Saints Redline Mask Finish</h3><p>{maskOwned ? "Earned in training" : "Complete a Prospect mission"}</p>{maskOwned ? <StatusPill tone="building">Owned</StatusPill> : <StatusPill tone="neutral">Locked</StatusPill>}</article>
-        <article className="gf-locker-item is-locked"><LockKeyhole size={24} /><h3>Crease Trail</h3><p>Finish the Prospect chapter.</p><StatusPill tone="neutral">Locked</StatusPill></article>
-        <article className="gf-locker-item is-locked"><LockKeyhole size={24} /><h3>Starter Patch</h3><p>Available in a later chapter.</p><StatusPill tone="neutral">Locked</StatusPill></article>
-      </section>
-    </>
-  );
-}
-
 function ProfileScreen({ state }: Omit<PlayerScreensProps, "activeTab" | "updateState">) {
   return (
     <>
@@ -357,9 +342,8 @@ function ProfileScreen({ state }: Omit<PlayerScreensProps, "activeTab" | "update
 }
 
 export function PlayerScreens({ activeTab, state, updateState }: PlayerScreensProps) {
-  if (activeTab === "Journey") return <JourneyScreen state={state} />;
+  if (activeTab === "Train") return <JourneyScreen state={state} />;
   if (activeTab === "Progress") return <ProgressScreen state={state} />;
-  if (activeTab === "Locker") return <LockerScreen state={state} />;
   if (activeTab === "Profile") return <ProfileScreen state={state} />;
   return <TodayScreen state={state} updateState={updateState} />;
 }

@@ -356,3 +356,107 @@ button:focus-visible, select:focus-visible { outline: 3px solid rgba(255, 163, 1
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Bright training companion: player-first, quick to understand, easy to use. */
+:root {
+  --background: #f6f7f9;
+  --foreground: #18202b;
+  --card: #ffffff;
+  --card-foreground: #18202b;
+  --popover: #ffffff;
+  --popover-foreground: #18202b;
+  --primary: #d6203e;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f2f5;
+  --secondary-foreground: #18202b;
+  --muted: #eef0f4;
+  --muted-foreground: #677180;
+  --accent: #fff0f3;
+  --accent-foreground: #a6132d;
+  --border: #e1e5ea;
+  --input: #e1e5ea;
+  --ring: #d6203e;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #18202b;
+  --sidebar-primary: #d6203e;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fff0f3;
+  --sidebar-accent-foreground: #a6132d;
+  --sidebar-border: #e1e5ea;
+  --sidebar-ring: #d6203e;
+  --gf-cyan: #d6203e;
+  --gf-cyan-bright: #f59aaa;
+  --gf-gold: #f7b733;
+  --gf-ink: #f6f7f9;
+  --gf-panel: #ffffff;
+  --gf-line: #e1e5ea;
+  --gf-muted: #677180;
+}
+
+html, body { background: #f6f7f9; color: #18202b; }
+button:focus-visible, select:focus-visible { outline-color: rgba(214, 32, 62, .7); }
+.gf-app-shell { padding-bottom: 20px; background: #f6f7f9; }
+.gf-ambient { display: none; }
+.gf-topbar { min-height: 68px; padding: 0 0 14px; border-bottom: 1px solid #e1e5ea; }
+.gf-brand { color: #18202b; }
+.gf-brand-wordmark small { color: #687383; }
+.gf-brand-mark { background: #d6203e; border-color: #d6203e; box-shadow: none; }
+.gf-role-switch { border-color: #e1e5ea; background: #ffffff; box-shadow: none; }
+.gf-role-switch button, .gf-reset { color: #596575; }
+.gf-role-switch button:hover, .gf-reset:hover { color: #18202b; }
+.gf-role-switch button.is-active { background: #d6203e; box-shadow: none; }
+.gf-player-team-chip { color: #425062; }
+.gf-player-team-chip svg { color: #d6203e; }
+.gf-player-layout { gap: clamp(18px, 3vw, 42px); }
+.gf-player-nav { gap: 22px; min-height: calc(100vh - 110px); }
+.gf-avatar, .gf-roster-avatar { color: #ffffff; background: #d6203e; border-color: #d6203e; box-shadow: none; }
+.gf-profile-stub span, .gf-nav-footnote { color: #7a8491; }
+.gf-player-nav nav button { color: #66717e; }
+.gf-player-nav nav button:hover { color: #18202b; background: #f0f2f5; }
+.gf-player-nav nav button.is-active { color: #b20f2d; border-color: #f4c4ce; background: #fff0f3; }
+.gf-nav-dot { background: #d6203e; box-shadow: none; }
+.gf-context-row { margin-bottom: 20px; }
+.gf-eyebrow { color: #a6132d; font-size: .73rem; }
+.gf-context-row h1, .gf-adult-heading h1 { color: #18202b; font-size: clamp(2rem, 3.6vw, 3rem); }
+.gf-streak, .gf-token-count { color: #18202b; border-color: #e1e5ea; background: #ffffff; box-shadow: 0 4px 14px rgba(29, 38, 50, .05); }
+.gf-streak strong { color: #d6203e; }
+.gf-streak span { color: #687383; }
+.gf-mission-hero, .gf-journey-hero, .gf-progress-hero, .gf-locker-hero, .gf-safety-card, .gf-parent-safety-card, .gf-access-card { border-color: #e1e5ea; background: #ffffff; box-shadow: 0 10px 28px rgba(27, 39, 53, .06); }
+.gf-mission-hero { grid-template-columns: minmax(0, 1fr) 170px; min-height: 280px; }
+.gf-mission-hero::after, .gf-journey-hero::after { right: 26px; bottom: -46px; width: 215px; height: 215px; border-color: #f3c2cc; box-shadow: 0 0 0 30px #fff5f7, 0 0 0 60px #fff9fa; }
+.gf-mission-hero h2, .gf-journey-hero h2, .gf-progress-hero h2, .gf-locker-hero h2, .gf-safety-card h2, .gf-parent-safety-card h2, .gf-access-card h2 { color: #18202b; }
+.gf-mission-hero p, .gf-journey-hero p, .gf-progress-hero p, .gf-locker-hero p, .gf-safety-card p, .gf-parent-safety-card p, .gf-access-card p { color: #5f6b78; }
+.gf-mission-meta span { color: #536070; border-color: #e1e5ea; background: #f7f8fa; }
+.gf-primary-action { border-color: #d6203e; background: #d6203e; box-shadow: none; }
+.gf-primary-action:hover { background: #b91530; box-shadow: none; }
+.gf-secondary-action { color: #3f4c5c; border-color: #d9dee5; background: #ffffff; }
+.gf-secondary-action:hover { color: #18202b; background: #f4f6f8; }
+.gf-text-action, .gf-safety-link { color: #a6132d; }
+.gf-mission-hero-meter { align-self: stretch; justify-content: center; padding: 20px 8px; border-left: 1px solid #e8ebef; }
+.gf-mission-hero-meter p { color: #687383; }
+.gf-mission-hero-meter strong { color: #d6203e; }
+.gf-progress-ring { background: conic-gradient(#d6203e var(--progress), #f0f2f5 0); box-shadow: none; }
+.gf-progress-ring-inner { border-color: #e1e5ea; background: #ffffff; color: #18202b; }
+.gf-progress-ring-inner span { color: #687383; }
+.gf-panel, .gf-adult-card, .gf-profile-card, .gf-attribute-card, .gf-locker-item, .gf-journey-node { border-color: #e1e5ea; background: #ffffff; box-shadow: 0 6px 18px rgba(27, 39, 53, .04); }
+.gf-panel-heading h3, .gf-card-heading h2, .gf-attribute-card h3, .gf-locker-item h3, .gf-profile-card h3 { color: #18202b; }
+.gf-activity-count { color: #b20f2d; background: #fff0f3; }
+.gf-activity { color: #18202b; border-color: #eef0f3; background: #fbfcfd; }
+.gf-activity:hover:not(:disabled) { border-color: #efb7c3; background: #fff5f7; transform: none; }
+.gf-activity strong { color: #18202b; }
+.gf-activity small { color: #6b7683; }
+.gf-icon-badge-cyan { color: #c41634; background: #fff0f3; border-color: #f7ccd4; }
+.gf-icon-badge-gold { color: #8d5c00; background: #fff7dc; border-color: #f7e3a8; }
+.gf-next-up { background: #fff7f8; }
+.gf-next-up h3 { color: #18202b; }
+.gf-next-up p, .gf-next-up small { color: #687383; }
+.gf-mini-progress, .gf-attribute-bar { background: #edf0f3; }
+.gf-mini-progress span, .gf-attribute-bar span { background: #d6203e; }
+.gf-prototype-note { color: #7b8490; }
+
+@media (max-width: 680px) {
+  .gf-mission-hero { grid-template-columns: 1fr; min-height: auto; }
+  .gf-mission-hero-meter { align-self: auto; justify-items: start; padding: 12px 0 0; border-top: 1px solid #e8ebef; border-left: 0; }
+  .gf-mission-hero-meter .gf-progress-ring { display: grid; width: 86px; }
+  .gf-progress-ring-inner { width: 69px; height: 69px; }
+}

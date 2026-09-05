@@ -9,13 +9,13 @@ import { PlayerScreens } from "./player-screens";
 
 type Role = "player" | "parent" | "coach";
 
-const playerTabs = ["Today", "Journey", "Progress", "Locker", "Profile"];
+const playerTabs = ["Home", "Train", "Progress", "Profile"];
 const storageKey = "scs-saints-goalie-forge-demo-state";
 
 export function GoalieForgeApp() {
   const [state, setState] = useState(() => createInitialState());
   const [role, setRole] = useState<Role>("player");
-  const [activeTab, setActiveTab] = useState("Today");
+  const [activeTab, setActiveTab] = useState("Home");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export function GoalieForgeApp() {
 
   const selectRole = (nextRole: Role) => {
     setRole(nextRole);
-    if (nextRole === "player") setActiveTab("Today");
+    if (nextRole === "player") setActiveTab("Home");
   };
 
   const playerTeam = state.organization.teams.find((team: { id: string }) => team.id === state.player.teamId);
@@ -108,7 +108,7 @@ export function GoalieForgeApp() {
                   onClick={() => setActiveTab(tab)}
                 >
                   <span>{tab}</span>
-                  {tab === "Today" ? <span className="gf-nav-dot" /> : null}
+                  {tab === "Home" ? <span className="gf-nav-dot" /> : null}
                 </button>
               ))}
             </nav>
@@ -118,7 +118,7 @@ export function GoalieForgeApp() {
           </aside>
 
           <section className="gf-workspace">
-            <PlayerScreens activeTab={activeTab as "Today" | "Journey" | "Progress" | "Locker" | "Profile"} state={state} updateState={setState} />
+            <PlayerScreens activeTab={activeTab as "Home" | "Train" | "Progress" | "Profile"} state={state} updateState={setState} />
           </section>
         </div>
       ) : <AdultScreens role={role} state={state} updateState={setState} />}
