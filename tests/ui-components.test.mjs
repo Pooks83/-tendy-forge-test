@@ -90,6 +90,16 @@ test('mobile shell uses safe areas without forcing a minimum document width',asy
   assert.doesNotMatch(globals,/body\s*\{[^}]*min-width:\s*320px/s);
 });
 
+test('brand and onboarding use structural classes without dead-shell spacing',async()=>{
+  const css=await readFile(path.join(root,'app/training.css'),'utf8');
+  assert.match(css,/\.tf-brand-mark\{/);
+  assert.match(css,/\.tf-brand-copy\{/);
+  assert.doesNotMatch(css,/\.tf-brand>span\{/);
+  assert.match(css,/\.tf-access-main\{/);
+  assert.match(css,/\.tf-access-app\{/);
+  assert.match(css,/@media\(max-width:760px\)[\s\S]*\.tf-access-actions/);
+});
+
 test("emits chart themes for the starter's media dark mode", async () => {
   const { ChartStyle } = await vite.ssrLoadModule("/components/ui/chart.tsx");
   const html = renderToStaticMarkup(
