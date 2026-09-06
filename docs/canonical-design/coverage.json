@@ -1,0 +1,12 @@
+{
+  "screens": 47,
+  "flows": 33,
+  "actions": 159,
+  "stateDefinitions": 20,
+  "applicableScreenStatePairs": 758,
+  "overlays": 9,
+  "componentFamilies": 10,
+  "structuralValidation": "passed",
+  "visualValidation": "not executed; no claim of 6-width validation",
+  "stateDesign": "Inherited behavioral contracts; detailed per-screen visual state acceptance still required"
+}
