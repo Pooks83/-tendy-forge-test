@@ -19,6 +19,7 @@ test('built worker renders training and isolates durable profiles and coach perm
   assert.match(html,/aria-label="Main navigation"/);
   assert.match(html,/id="training-main"/);
   assert.match(html,/<meta(?=[^>]*name="codex-preview")(?=[^>]*content="development")/);
+  assert.match(html,/<meta(?=[^>]*name="viewport")(?=[^>]*width=device-width)(?=[^>]*viewport-fit=cover)/);
   assert.equal((await call(null)).status,401);
   assert.equal((await call('owner',{type:'create'},'http://evil.test')).status,403);
   const created=await call('owner',{type:'create',nickname:'Test goalie',team:'Test team',ageBand:'10–12',adultConfirmed:true});
@@ -32,11 +33,15 @@ test('built worker renders training and isolates durable profiles and coach perm
   assert.equal((await call('coach')).data.profiles[0].role,'coach');
   assert.equal((await call('coach',{type:'action',profileId,revision:1,action:{type:'set',drillId:'warm',setIndex:1}})).status,403);
   assert.equal((await call('coach',{type:'delete',profileId})).status,403);
-  assert.equal((await call('coach',{type:'action',profileId,revision:1,action:{type:'check',group:'Move',passed:true,note:'Five of six steps ended balanced.'}})).status,200);
+  assert.equal((await call('coach',{type:'action',profileId,revision:1,action:{type:'check',passed:true,note:'Specific but missing a skill.'}})).status,400);
+  assert.equal((await call('coach',{type:'action',profileId,revision:1,action:{type:'check',skillId:1,passed:true,note:'Five of six steps ended balanced.'}})).status,200);
+  assert.equal((await call('coach',{type:'action',profileId,revision:2,action:{type:'evaluate',ratings:Array(10).fill(2),cause:'tracking',note:'Tracked eight of ten catches into the hands.'}})).status,200);
   assert.equal((await call('owner',{type:'revoke',profileId,email:'coach@example.test'})).status,200);
   assert.equal((await call('coach')).data.profiles.length,0);
   assert.equal((await call('coach',{type:'export',profileId})).status,404);
-  assert.equal((await call('owner',{type:'export',profileId})).data.training.checks.length,1);
+  const exported=(await call('owner',{type:'export',profileId})).data.training;
+  assert.equal(exported.checks.length,1);
+  assert.equal(exported.evaluations.length,1);
   assert.equal((await call('owner',{type:'delete',profileId})).status,200);
   assert.equal((await call('owner')).data.profiles.length,0);
  } finally {await mf.dispose();}

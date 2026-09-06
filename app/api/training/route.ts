@@ -1,6 +1,6 @@
 import {headers} from 'next/headers';
 import {trainingDb} from '@/lib/training-store';
-import {newTrainingState} from '@/lib/training.mjs';
+import {newTrainingState,normalizeTrainingState} from '@/lib/training.mjs';
 import {applyAction} from '@/lib/training-actions.mjs';
 export const dynamic='force-dynamic';
 type Row={id:string;owner_id:string;nickname:string;team:string;age_band:string;state:string;revision:number};
@@ -15,7 +15,7 @@ export async function GET() {
  try {
   const db=trainingDb();
   const rows=await db.prepare('SELECT p.* FROM training_profiles p WHERE p.owner_id=? OR EXISTS (SELECT 1 FROM training_coach_grants g WHERE g.profile_id=p.id AND g.email=?) ORDER BY p.created_at').bind(user.id,user.email).all<Row>();
-  const profiles=await Promise.all(rows.results.map(async r=>({id:r.id,nickname:r.nickname,team:r.team,ageBand:r.age_band,role:r.owner_id===user.id?'owner':'coach',revision:r.revision,state:JSON.parse(r.state),grants:r.owner_id===user.id?(await db.prepare('SELECT email FROM training_coach_grants WHERE profile_id=?').bind(r.id).all<{email:string}>()).results.map(g=>g.email):[]})));
+  const profiles=await Promise.all(rows.results.map(async r=>({id:r.id,nickname:r.nickname,team:r.team,ageBand:r.age_band,role:r.owner_id===user.id?'owner':'coach',revision:r.revision,state:normalizeTrainingState(JSON.parse(r.state)),grants:r.owner_id===user.id?(await db.prepare('SELECT email FROM training_coach_grants WHERE profile_id=?').bind(r.id).all<{email:string}>()).results.map(g=>g.email):[]})));
   return reply({profiles});
  } catch(e){console.error('Training load failed',e instanceof Error?e.message:'error');return reply({error:'Training could not be loaded. Your saved progress has not been changed.'},503);}
 }
@@ -51,9 +51,9 @@ export async function POST(request:Request) {
   if(input.type!=='action'||!Number.isInteger(input.revision)||!input.action)return reply({error:'Invalid action'},400);
   // Authorization rechecked for every request. State is never accepted wholesale from a client.
   if(!owner&&!['check','evaluate'].includes(input.action.type))return reply({error:'Coach permission does not include changing player training'},403);
-  const state=applyAction(JSON.parse(row.state),input.action,{role:owner?'owner':'coach',id:user.id});
+  const state=applyAction(normalizeTrainingState(JSON.parse(row.state)),input.action,{role:owner?'owner':'coach',id:user.id});
   const result=await db.prepare('UPDATE training_profiles SET state=?,revision=revision+1 WHERE id=? AND revision=?').bind(JSON.stringify(state),row.id,input.revision).run();
   if(!result.meta.changes)return reply({error:'Progress changed on another device. Reload before continuing.'},409);
   return reply({state,revision:input.revision+1});
- } catch(e){const message=e instanceof Error?e.message:'Unable to save';if(/permission|accomplishments|Complete|Finish|Invalid|Unknown|paused|observed|final path/.test(message))return reply({error:message},400);console.error('Training write failed',message);return reply({error:'Save failed. Your action has not been confirmed. Please retry.'},503);}
+ } catch(e){const message=e instanceof Error?e.message:'Unable to save';if(/permission|accomplishments|Complete|Finish|Invalid|Unknown|paused|observed|skill|final path/i.test(message))return reply({error:message},400);console.error('Training write failed',message);return reply({error:'Save failed. Your action has not been confirmed. Please retry.'},503);}
 }

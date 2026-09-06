@@ -73,6 +73,25 @@ test('adult authentication starts from server-rendered top-level links',async()=
   assert.match(signOut,/target="_top"/);
 });
 
+test('drill illustration teaches setup, action, and finish in one accessible sequence',async()=>{
+  const {DrillMap}=await vite.ssrLoadModule('/components/goalie-forge/drill-map.tsx');
+  const html=renderToStaticMarkup(React.createElement(DrillMap,{kind:'wall',name:'Wall ball'}));
+  assert.match(html,/Instruction picture/);
+  assert.match(html,/1\. Get ready/);
+  assert.match(html,/2\. Do the move/);
+  assert.match(html,/3\. Finish steady/);
+  assert.equal((html.match(/class="tf-map-step"/g)||[]).length,3);
+});
+
+test('mobile shell uses safe areas without forcing a minimum document width',async()=>{
+  const css=await readFile(path.join(root,'app/training.css'),'utf8');
+  const globals=await readFile(path.join(root,'app/globals.css'),'utf8');
+  assert.match(css,/safe-area-inset-top/);
+  assert.match(css,/overflow-x:\s*clip/);
+  assert.doesNotMatch(css,/\.tf-map svg\{[^}]*min-width/s);
+  assert.doesNotMatch(globals,/body\s*\{[^}]*min-width:\s*320px/s);
+});
+
 test("emits chart themes for the starter's media dark mode", async () => {
   const { ChartStyle } = await vite.ssrLoadModule("/components/ui/chart.tsx");
   const html = renderToStaticMarkup(

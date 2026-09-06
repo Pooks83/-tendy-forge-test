@@ -14,12 +14,12 @@ test('stopping training persists until an adult explicitly clears it',()=>{
  assert.throws(()=>api.applyAction(stopped,{type:'clear-safety'},{role:'player'}),/permission/i);
  assert.equal(api.applyAction(stopped,{type:'clear-safety'},{role:'owner'}).safetyStopped,false);
 });
-test('coach evaluation validates five ratings and preserves evidence without awarding mastery',()=>{
- const action={type:'evaluate',ratings:[2,1,2,1,2],cause:'tracking',note:'Eyes left the ball before the catch on 4 of 10 throws.'};
+test('coach evaluation validates all ten sections and preserves evidence without awarding mastery',()=>{
+ const action={type:'evaluate',ratings:[2,1,2,1,2,2,1,2,1,2],cause:'tracking',note:'Eyes left the ball before the catch on 4 of 10 throws.'};
  assert.throws(()=>api.applyAction(newTrainingState(),action,{role:'player'}),/permission/i);
  const result=api.applyAction(newTrainingState(),action,{role:'coach',id:'coach-1'},'2026-09-05T12:00:00Z');
  assert.equal(result.evaluations.length,1);
- assert.deepEqual(result.evaluations[0].ratings,[2,1,2,1,2]);
+ assert.deepEqual(result.evaluations[0].ratings,[2,1,2,1,2,2,1,2,1,2]);
  assert.equal(result.evaluations[0].reviewedBy,'coach-1');
  assert.equal(result.checks.length,0);
  assert.throws(()=>api.applyAction(result,{...action,ratings:[3,3]},{role:'coach',id:'coach-1'}),/Invalid/);
@@ -41,11 +41,19 @@ test('cannot skip sets or mark the reading drill done without an answer',()=>{
  assert.throws(()=>api.applyAction(newTrainingState(),{type:'set',drillId:'read',setIndex:0},{role:'owner'}),/answer/i);
 });
 test('different adults keep their same-day evidence',()=>{
- const action={type:'check',group:'Move',passed:true,note:'Five controlled landings observed.'};
+ const action={type:'check',skillId:1,passed:true,note:'Five controlled landings observed.'};
  const a=api.applyAction(newTrainingState(),action,{role:'owner',id:'parent'},'2026-09-05T12:00:00Z');
  const b=api.applyAction(a,{...action,passed:false,note:'Balance needs more practice today.'},{role:'coach',id:'coach'},'2026-09-05T13:00:00Z');
  assert.equal(b.checks.length,2);
  assert.equal(b.checks[0].reviewedBy,'parent');
+});
+
+test('skill checks derive their group from the declared skill and reject missing skill evidence',()=>{
+ const state=newTrainingState();
+ assert.throws(()=>api.applyAction(state,{type:'check',group:'Move',passed:true,note:'Five controlled landings observed.'},{role:'owner',id:'parent'}),/skill/i);
+ const result=api.applyAction(state,{type:'check',skillId:18,passed:true,note:'Named the release cue before choosing a response.'},{role:'coach',id:'coach'});
+ assert.equal(result.checks[0].skillId,18);
+ assert.equal(result.checks[0].group,'React');
 });
 test('week 20 starts a fresh practice cycle without advancing the path or losing history',()=>{
  const state={...newTrainingState(),week:19,day:2,sessions:[{id:'foundation:19:2',date:'2026-09-05T12:00:00Z',pathId:'foundation',week:19,day:2}]};

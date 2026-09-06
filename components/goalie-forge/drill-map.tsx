@@ -1,14 +1,35 @@
 import {useId} from 'react';
-// Functional floor-layout diagrams, not demonstrations of body mechanics.
+
+const labels=['1. Get ready','2. Do the move','3. Finish steady'];
+
+function Goalie({x,y,lean=0,ball=false}:{x:number;y:number;lean?:number;ball?:boolean}) {
+ return <g transform={`translate(${x} ${y}) rotate(${lean})`} stroke="#263b52" strokeWidth="4" strokeLinecap="round" fill="none">
+  <circle cx="0" cy="-28" r="9" fill="#fff"/>
+  <path d="M0 -18 V16 M0 -4 L-19 9 M0 -4 L19 7 M0 16 L-16 40 M0 16 L16 40"/>
+  {ball&&<circle cx="24" cy="3" r="5" fill="#cc1736" stroke="#cc1736"/>}
+ </g>;
+}
+
 export function DrillMap({kind,name}:{kind:string;name:string}) {
  const arrow=useId().replace(/:/g,'');
- const wall=kind==='wall'||kind==='support';
- return <figure className="tf-map"><svg viewBox="0 0 440 170" role="img" aria-label={`${name}: floor setup diagram. ${wall?'Wall above, starting position below.':kind==='sight'?'Start below, obstacle in the middle, target above.':'Markers show the start and target; arrows show travel direction.'}`}>
-  <defs><marker id={arrow} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8" fill="#cc1736"/></marker></defs>
-  <rect x="8" y="8" width="424" height="154" rx="16" fill="#f5f7fa" stroke="#dce3eb"/>
-  {wall?<><path d="M80 34 H360" stroke="#718096" strokeWidth="7"/><text x="220" y="25" textAnchor="middle">Solid wall</text><circle cx="220" cy="130" r="13" fill="#cc1736"/><text x="250" y="136">Start here</text>{kind==='wall'?<><path d="M198 110 L190 56 L235 109" fill="none" stroke="#cc1736" strokeWidth="3" markerEnd={`url(#${arrow})`}/><text x="80" y="92">Soft ball</text></>:<text x="220" y="81" textAnchor="middle">Stay within easy reach</text>}</>:
-  kind==='chair'?<><path d="M80 34 H360" stroke="#718096" strokeWidth="7"/><text x="220" y="25" textAnchor="middle">Wall</text><rect x="182" y="40" width="76" height="45" rx="4" fill="#94a3b8"/><text x="275" y="69">Stable chair</text><circle cx="204" cy="122" r="9" fill="#cc1736"/><circle cx="236" cy="122" r="9" fill="#cc1736"/><text x="90" y="143">Feet in front of the seat</text></>:
-  kind==='sight'?<><circle cx="220" cy="131" r="12" fill="#cc1736"/><rect x="178" y="73" width="84" height="20" rx="4" fill="#94a3b8"/><circle cx="220" cy="35" r="10" fill="#137f82"/><path d="M211 118 L163 72 L208 39 M229 118 L277 72 L232 39" fill="none" stroke="#cc1736" strokeWidth="2" strokeDasharray="5 5"/><text x="291" y="84">Chair</text><text x="243" y="40">Target</text></>:
-  <><circle cx="93" cy="80" r="17" fill="#cc1736"/><circle cx="342" cy="80" r="17" fill="#137f82"/><path d="M126 80 H306" fill="none" stroke="#cc1736" strokeWidth="3" markerEnd={`url(#${arrow})`}/><text x="93" y="121" textAnchor="middle">Start</text><text x="342" y="121" textAnchor="middle">Target</text><text x="220" y="52" textAnchor="middle">Clear, non-slip space</text></>}
- </svg><figcaption>Setup view • not to scale. Follow the steps below for movement.</figcaption></figure>;
+ const isWall=kind==='wall'||kind==='support';
+ const isChair=kind==='chair'||kind==='sight';
+ return <figure className="tf-map">
+  <div className="tf-map-steps" role="img" aria-label={`Instruction picture for ${name}. Three steps show how to get ready, do the movement, and finish steady.`}>
+   {labels.map((label,index)=><svg className="tf-map-step" key={label} viewBox="0 0 220 220" aria-hidden="true">
+    <defs><marker id={`${arrow}-${index}`} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="#cc1736"/></marker></defs>
+    <rect x="6" y="6" width="208" height="208" rx="18" fill={index===1?'#fff3f5':'#f7f9fc'} stroke={index===1?'#efb8c3':'#dce3eb'}/>
+    <text x="110" y="31" textAnchor="middle" fontWeight="750">{label}</text>
+    {isWall&&<><path d="M34 62 H186" stroke="#718096" strokeWidth="6"/><text x="110" y="55" textAnchor="middle">wall</text></>}
+    {isChair&&<><rect x="88" y="72" width="44" height="35" rx="4" fill="#b3bdc9"/><text x="110" y="125" textAnchor="middle">chair</text></>}
+    <Goalie x={index===1&&kind==='lane'?82:110} y={index===2?151:145} lean={index===1&&kind==='lane'?-8:0} ball={isWall&&index<2}/>
+    {index===1&&kind==='lane'&&<path d="M112 170 H166" stroke="#cc1736" strokeWidth="4" markerEnd={`url(#${arrow}-${index})`}/>}
+    {index===1&&isWall&&<path d="M136 142 Q165 92 124 67" stroke="#cc1736" strokeWidth="3" strokeDasharray="5 5" fill="none" markerEnd={`url(#${arrow}-${index})`}/>}
+    {index===1&&kind==='target'&&<><path d="M132 146 H174" stroke="#cc1736" strokeWidth="3" markerEnd={`url(#${arrow}-${index})`}/><circle cx="184" cy="146" r="7" fill="#cc1736"/></>}
+    {index===1&&kind==='sight'&&<path d="M120 111 Q155 87 177 72" stroke="#cc1736" strokeWidth="3" strokeDasharray="4 4" fill="none"/>}
+    {index===2&&<><path d="M77 193 H143" stroke="#2f8a63" strokeWidth="4"/><text x="110" y="207" textAnchor="middle" fill="#287453">hold control</text></>}
+   </svg>)}
+  </div>
+  <figcaption>Instruction picture • move slowly while learning. Use the written steps for the exact reps.</figcaption>
+ </figure>;
 }
