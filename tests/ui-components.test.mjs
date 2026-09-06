@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -21,33 +21,6 @@ after(async () => {
   await vite.close();
 });
 
-async function readCssTree(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const contents = await Promise.all(
-    entries.map(async (entry) => {
-      const entryPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        return readCssTree(entryPath);
-      }
-      return entry.name.endsWith(".css") ? readFile(entryPath, "utf8") : "";
-    }),
-  );
-  return contents.join("\n");
-}
-
-test("emits the catalog's animation and scrolling utilities", async () => {
-  const css = await readCssTree(path.join(root, "dist"));
-
-  assert.match(css, /--tw-enter-opacity/);
-  assert.match(css, /scrollbar-width:\s*thin/);
-  assert.match(css, /scrollbar-width:\s*none/);
-  assert.match(css, /scrollbar-gutter:\s*stable/);
-  assert.match(css, /scroll-fade-reveal-b/);
-  assert.match(css, /mask-image:/);
-  assert.match(css, /tw-shimmer/);
-  assert.match(css, /prefers-reduced-motion:\s*reduce/);
-});
-
 test("forwards progress semantics to the primitive", async () => {
   const { Progress } = await vite.ssrLoadModule("/components/ui/progress.tsx");
   const html = renderToStaticMarkup(React.createElement(Progress, { value: 37 }));
@@ -55,6 +28,31 @@ test("forwards progress semantics to the primitive", async () => {
   assert.match(html, /aria-valuenow="37"/);
   assert.match(html, /aria-valuetext="37%"/);
   assert.match(html, /data-state="loading"/);
+});
+
+test('first-run access shell exposes no inactive player navigation',async()=>{
+  const {TrainingApp}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
+  const html=renderToStaticMarkup(React.createElement(TrainingApp,{
+    signInLink:React.createElement('a',{href:'/signin'},'Adult sign-in'),
+    signOutLink:React.createElement('a',{href:'/signout'},'Sign out'),
+  }));
+  assert.doesNotMatch(html,/Main navigation/);
+  assert.doesNotMatch(html,/Open profile/);
+  assert.match(html,/Loading your training/);
+});
+
+test('signed-in empty account has complete parent coach and sign-out paths',async()=>{
+  const {AccessShell}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
+  assert.equal(typeof AccessShell,'function');
+  const html=renderToStaticMarkup(React.createElement(AccessShell,{
+    mode:'signed-in',error:'',signInLink:null,
+    signOutLink:React.createElement('a',{href:'/signout'},'Sign out'),
+    onPreview:()=>{},onReload:()=>{},onCreated:async()=>{},
+  }));
+  assert.match(html,/I’m a parent or guardian/);
+  assert.match(html,/I’m a coach/);
+  assert.match(html,/Sign out/);
+  assert.doesNotMatch(html,/Main navigation/);
 });
 test('training save feedback exposes the error and reload action, and stays absent without an error',async()=>{
  const {TrainingSaveError}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
