@@ -16,8 +16,13 @@ test('built worker renders training and isolates durable profiles and coach perm
   };
   const page=await mf.dispatchFetch('http://localhost/',{headers:{accept:'text/html'}});
   assert.equal(page.status,200);const html=await page.text();
-  assert.match(html,/aria-label="Main navigation"/);
-  assert.match(html,/id="training-main"/);
+  assert.doesNotMatch(html,/aria-label="Main navigation"/);
+  assert.doesNotMatch(html,/id="training-main"/);
+  assert.match(html,/class="tf-app tf-access-app"/);
+  assert.match(html,/aria-labelledby="access-title"/);
+  assert.match(html,/Loading your training/);
+  assert.match(html,/class="tf-brand-mark"/);
+  assert.match(html,/class="tf-brand-copy"/);
   assert.match(html,/<meta(?=[^>]*name="codex-preview")(?=[^>]*content="development")/);
   assert.match(html,/<meta(?=[^>]*name="viewport")(?=[^>]*width=device-width)(?=[^>]*viewport-fit=cover)/);
   assert.equal((await call(null)).status,401);
