@@ -1,17 +1,16 @@
-import {headers} from 'next/headers';
 import {trainingDb} from '@/lib/training-store';
 import {newTrainingState,normalizeTrainingState} from '@/lib/training.mjs';
 import {applyAction} from '@/lib/training-actions.mjs';
+import {getAdultIdentity} from '@/lib/account-identity';
 export const dynamic='force-dynamic';
 type Row={id:string;owner_id:string;nickname:string;team:string;age_band:string;state:string;revision:number};
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
-async function identity(){const h=await headers();const id=h.get('oai-authenticated-user-id');const email=h.get('oai-authenticated-user-email');return id&&email?{id,email:email.toLowerCase()}:null;}
 async function accessible(id:string,user:{id:string;email:string}) {
  const row=await trainingDb().prepare('SELECT p.* FROM training_profiles p WHERE p.id=? AND (p.owner_id=? OR EXISTS (SELECT 1 FROM training_coach_grants g WHERE g.profile_id=p.id AND g.email=?))').bind(id,user.id,user.email).first<Row>();
  return row;
 }
 export async function GET() {
- const user=await identity();if(!user)return reply({error:'An adult must sign in to save training.'},401);
+ const user=await getAdultIdentity();if(!user)return reply({error:'An adult must sign in to save training.'},401);
  try {
   const db=trainingDb();
   const rows=await db.prepare('SELECT p.* FROM training_profiles p WHERE p.owner_id=? OR EXISTS (SELECT 1 FROM training_coach_grants g WHERE g.profile_id=p.id AND g.email=?) ORDER BY p.created_at').bind(user.id,user.email).all<Row>();
@@ -20,7 +19,7 @@ export async function GET() {
  } catch(e){console.error('Training load failed',e instanceof Error?e.message:'error');return reply({error:'Training could not be loaded. Your saved progress has not been changed.'},503);}
 }
 export async function POST(request:Request) {
- const user=await identity();if(!user)return reply({error:'An adult must sign in.'},401);
+ const user=await getAdultIdentity();if(!user)return reply({error:'An adult must sign in.'},401);
  // All writes require same-origin browser requests and small JSON payloads.
  if(request.headers.get('origin')!==new URL(request.url).origin)return reply({error:'Request origin rejected'},403);
  if(!request.headers.get('content-type')?.includes('application/json'))return reply({error:'JSON required'},415);
