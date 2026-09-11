@@ -51,6 +51,10 @@ test('built worker renders training and isolates durable profiles and coach perm
   assert.equal((await call('owner',{type:'revoke',profileId,email:'coach@example.test'})).status,200);
   assert.equal((await call('coach')).data.profiles.length,0);
   assert.equal((await call('coach',{type:'export',profileId})).status,404);
+  await db.prepare("UPDATE guardian_player SET status='revoked',revoked_at=? WHERE account_id=? AND profile_id=?").bind('2026-09-11T00:00:00Z','owner',profileId).run();
+  assert.equal((await call('owner')).data.profiles.length,0);
+  assert.equal((await call('owner',{type:'export',profileId})).status,404);
+  await db.prepare("UPDATE guardian_player SET status='active',revoked_at=NULL WHERE account_id=? AND profile_id=?").bind('owner',profileId).run();
   const exported=(await call('owner',{type:'export',profileId})).data.training;
   assert.equal(exported.checks.length,1);
   assert.equal(exported.evaluations.length,1);

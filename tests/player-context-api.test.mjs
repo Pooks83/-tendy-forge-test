@@ -32,6 +32,11 @@ async function getPlayer(mf,user){
  return {status:response.status,data:await response.json()};
 }
 
+async function getAdultProfiles(mf,user){
+ const response=await mf.dispatchFetch('http://localhost/api/training',{headers:headers(user)});
+ return {status:response.status,data:await response.json()};
+}
+
 test('player context requires a signed-in guardian and rejects cross-household substitution',async()=>{
  const {mf}=await setup();
  try{
@@ -79,6 +84,9 @@ test('two-child switching is atomic idempotent and returns only the selected chi
   assert.deepEqual(current.data,selectedB.data);
   const context=await db.prepare('SELECT profile_id FROM active_player_context WHERE account_id=?').bind('parent-a').first();
   assert.equal(context.profile_id,b.profileId);
+  const adult=await getAdultProfiles(mf,'parent-a');
+  assert.equal(adult.status,200);
+  assert.equal(adult.data.profiles.find(profile=>profile.active).id,b.profileId);
   const audit=await db.prepare("SELECT count(*) AS n FROM audit_events WHERE event_type='ACTIVE_PLAYER_CHANGED'").first();
   assert.equal(audit.n,2);
  }finally{await mf.dispose();}

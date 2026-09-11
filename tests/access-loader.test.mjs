@@ -12,13 +12,17 @@ test('valid active player loads only the child-safe endpoint',async()=>{
  assert.equal(result.kind,'player');
 });
 
-test('only missing or unavailable context may fall back to adult profile loading',async()=>{
- for(const status of [403,409]){
-  const calls=[];
-  const result=await access.loadInitialAccess(async url=>{calls.push(url);return url==='/api/player'?response(status,{}):response(200,{profiles:[]});},read);
-  assert.deepEqual(calls,['/api/player','/api/training']);
-  assert.equal(result.kind,'adult');
- }
+test('only missing player context may fall back to adult profile loading',async()=>{
+ const calls=[];
+ const result=await access.loadInitialAccess(async url=>{calls.push(url);return url==='/api/player'?response(409,{}):response(200,{profiles:[]});},read);
+ assert.deepEqual(calls,['/api/player','/api/training']);
+ assert.equal(result.kind,'adult');
+});
+
+test('forbidden player access never falls back to an adult dataset',async()=>{
+ const calls=[];
+ await assert.rejects(()=>access.loadInitialAccess(async url=>{calls.push(url);return response(403,{error:'relationship revoked'});},read),/relationship revoked/);
+ assert.deepEqual(calls,['/api/player']);
 });
 
 test('player endpoint failure never exposes the adult dataset as a fallback',async()=>{
@@ -32,4 +36,10 @@ test('child view state supplies safe empty evidence collections without adult no
  assert.deepEqual(value.checks,[]);
  assert.deepEqual(value.evaluations,[]);
  assert.equal(JSON.stringify(value).includes('default must not leak'),false);
+});
+
+test('adult mode selects the server-authoritative active profile',()=>{
+ assert.equal(access.activeAdultProfileId([{id:'a',active:false},{id:'b',active:true}]),'b');
+ assert.equal(access.activeAdultProfileId([{id:'a',active:false}]),'a');
+ assert.equal(access.activeAdultProfileId([]),'');
 });
