@@ -130,6 +130,8 @@ test('mobile shell uses safe areas without forcing a minimum document width',asy
   assert.match(css,/overflow-x:\s*clip/);
   assert.doesNotMatch(css,/\.tf-map svg\{[^}]*min-width/s);
   assert.doesNotMatch(globals,/body\s*\{[^}]*min-width:\s*320px/s);
+  assert.match(css,/@media\(max-width:760px\)[\s\S]*\.tf-nav button\{[^}]*min-height:54px/);
+  assert.match(css,/@media\(max-width:760px\)[\s\S]*\.tf-nav button span\{[^}]*overflow-wrap:anywhere/);
 });
 
 test('brand and onboarding use structural classes without dead-shell spacing',async()=>{
