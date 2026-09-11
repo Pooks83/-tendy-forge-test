@@ -35,6 +35,10 @@ test('first challenge start and completion are authoritative and idempotent',asy
   assert.equal(started.data.status,'active');
   const replay=await call(mf,'start','start-key-1');
   assert.deepEqual(replay.data,started.data);
+  await db.prepare("UPDATE first_challenge_results SET started_at=datetime('now','-59 seconds') WHERE profile_id='p1'").run();
+  const tooSoon=await call(mf,'complete','complete-too-soon');
+  assert.equal(tooSoon.status,409);
+  assert.equal(tooSoon.data.error.code,'CHALLENGE_IN_PROGRESS');
   await db.prepare("UPDATE first_challenge_results SET started_at=datetime('now','-61 seconds') WHERE profile_id='p1'").run();
   const completed=await call(mf,'complete','complete-1');
   assert.equal(completed.status,200);
@@ -56,5 +60,18 @@ test('first challenge rejects early completion and cross-household context',asyn
   const revoked=await call(mf);
   assert.equal(revoked.status,403);
   assert.equal(revoked.data.error.code,'RELATIONSHIP_REVOKED');
+ }finally{await mf.dispose();}
+});
+
+test('safety stop prevents first-challenge completion',async()=>{
+ const {mf,db}=await setup();
+ try{
+  await call(mf,'start','safety-start-key');
+  const row=await db.prepare("SELECT state FROM training_profiles WHERE id='p1'").first();
+  await db.prepare("UPDATE training_profiles SET state=?,revision=revision+1 WHERE id='p1'").bind(JSON.stringify({...JSON.parse(row.state),safetyStopped:true})).run();
+  await db.prepare("UPDATE first_challenge_results SET started_at=datetime('now','-61 seconds') WHERE profile_id='p1'").run();
+  const stopped=await call(mf,'complete','safety-complete-key');
+  assert.equal(stopped.status,409);
+  assert.equal(stopped.data.error.code,'SAFETY_STOPPED');
  }finally{await mf.dispose();}
 });

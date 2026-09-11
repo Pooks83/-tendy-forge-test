@@ -22,6 +22,13 @@
       "when": 1789104128580,
       "tag": "0002_worried_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789106187479,
+      "tag": "0003_amazing_jack_flag",
+      "breakpoints": true
     }
   ]
 }

@@ -59,7 +59,9 @@ export async function completeFirstChallenge(db:D1Database,identity:AdultIdentit
  const existing=await rowFor(db,profileId);
  if(!existing)throw canonicalError('CHALLENGE_NOT_STARTED','Start the challenge first.',409);
  if(existing.status==='completed')return {data:responseFor(existing),replayed:true};
- if(now.getTime()-new Date(existing.started_at).getTime()<55_000)throw canonicalError('CHALLENGE_IN_PROGRESS','Keep going until the 60-second timer finishes.',409);
+ const profile=await db.prepare('SELECT state FROM training_profiles WHERE id=?').bind(profileId).first<{state:string}>();
+ if(profile&&JSON.parse(profile.state).safetyStopped===true)throw canonicalError('SAFETY_STOPPED','Training is paused. Ask a parent or guardian to check in before continuing.',409);
+ if(now.getTime()-new Date(existing.started_at).getTime()<60_000)throw canonicalError('CHALLENGE_IN_PROGRESS','Keep going until the 60-second timer finishes.',409);
  const timestamp=now.toISOString();
  const result={completedSeconds:60,claim:'completed'};
  const data={status:'completed',protocolVersion:FIRST_CHALLENGE_PROTOCOL,result};

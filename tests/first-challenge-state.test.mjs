@@ -42,3 +42,9 @@ test('reload resumes an active challenge and sends completed players to Today',(
  const complete=flow.firstValueReducer(initial,{type:'HYDRATE',status:'completed'});
  assert.equal(complete.step,'first-today');
 });
+
+test('safety stop exits the active challenge into an adult recovery path',()=>{
+ const initial={...flow.initialFirstValueState(),step:'challenge-active'};
+ const stopped=flow.firstValueReducer(initial,{type:'SAFETY_STOPPED'});
+ assert.equal(stopped.step,'safety-stopped');
+});

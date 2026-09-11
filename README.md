@@ -6,11 +6,11 @@ Tendie Forge is an iOS-first, adult-managed development companion for goalies ap
 
 - `/` renders access, parent setup/review, player first-value, player, and adult/coach states.
 - ChatGPT/Sites authentication establishes the adult account. It is not the player identity or a relationship grant.
-- `/api/onboarding` creates or reconciles an adult-owned player, versioned consent, privacy preferences, active context, audit event, and idempotency result.
+- `/api/onboarding-draft` restores consented setup only to the same adult account; completion or withdrawal removes the draft. `/api/onboarding` then creates or reconciles the player, versioned consent, privacy preferences, active context, audit event, and idempotency result atomically.
 - `/api/player-context` authorizes one active goalie at a time; `/api/player` and `/api/player-action` expose only a whitelisted child-safe projection.
 - `/api/first-challenge` persists the versioned 60-second first-challenge state and result exactly once.
 - `/api/training` remains the adult/coach boundary for profile administration, evidence, evaluation, export, deletion, and legacy training actions.
-- D1 separately stores profiles, guardian relationships, consent, privacy preferences, active context, deletion requests, audit events, idempotency records, first-challenge results, and legacy coach grants.
+- D1 separately stores profiles, guardian relationships, consent, account-scoped onboarding drafts, privacy preferences, active context, deletion requests, audit events, idempotency records, first-challenge results, and legacy coach grants.
 - Player navigation is Today, Journey, Progress, and Profile. Adult data is not fetched before a valid child context chooses the player surface.
 
 ## Training model

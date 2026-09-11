@@ -37,3 +37,23 @@ test('successful setup enters handoff with the created profile identity',()=>{
  assert.equal(value.profileId,'player-1');
  assert.equal(value.data.nickname,'Goalie');
 });
+
+test('saved account draft resumes the exact consented setup step and operation',()=>{
+ assert.equal(typeof state.restoreOnboardingState,'function');
+ const restored=state.restoreOnboardingState({
+  step:'gear',
+  operationKey:'operation-resume-1',
+  data:{nickname:'Finn',ageBand:'10–12',catches:'right',experience:'developing',equipment:['tennis-ball'],plannedDays:[],missionMinutes:25,consentAccepted:true,analyticsAllowed:false},
+ });
+ assert.equal(restored.step,'gear');
+ assert.equal(restored.operationKey,'operation-resume-1');
+ assert.equal(restored.data.nickname,'Finn');
+ assert.equal(restored.data.consentAccepted,true);
+});
+
+test('invalid or pre-consent saved state cannot bypass parent permission',()=>{
+ const restored=state.restoreOnboardingState({step:'training-plan',operationKey:'unsafe',data:{nickname:'Child',consentAccepted:false}});
+ assert.equal(restored.step,'welcome');
+ assert.equal(restored.data.nickname,'');
+ assert.notEqual(restored.operationKey,'unsafe');
+});

@@ -1,17 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readFile} from 'node:fs/promises';
+import {readFile,readdir} from 'node:fs/promises';
 import {Miniflare} from 'miniflare';
 
 test('built worker renders training and isolates durable profiles and coach permissions',async()=>{
  const mf=new Miniflare({modules:true,scriptPath:new URL('../dist/server/index.js',import.meta.url).pathname,modulesRules:[{type:'ESModule',include:['**/*.js','**/*.mjs'],fallthrough:true}],compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB']});
  try {
   const db=await mf.getD1Database('DB');
-  const sql=await readFile(new URL('../drizzle/0000_slow_hellion.sql',import.meta.url),'utf8');
-  for(const statement of sql.split('--> statement-breakpoint'))if(statement.trim())await db.prepare(statement.trim()).run();
+  for(const file of (await readdir(new URL('../drizzle/',import.meta.url))).filter(name=>/^\d+.*\.sql$/.test(name)).sort()){
+   const sql=await readFile(new URL(`../drizzle/${file}`,import.meta.url),'utf8');
+   for(const statement of sql.split('--> statement-breakpoint'))if(statement.trim())await db.prepare(statement.trim()).run();
+  }
   const call=async(user,body,origin='http://localhost')=>{
    const headers={...(user?{'oai-authenticated-user-id':user,'oai-authenticated-user-email':user+'@example.test'}:{}),...(body?{'Content-Type':'application/json',Origin:origin}:{})};
    const r=await mf.dispatchFetch('http://localhost/api/training',{headers,...(body?{method:'POST',body:JSON.stringify(body)}:{})});
+   return {status:r.status,data:await r.json()};
+  };
+  const onboard=async(body,key='worker-onboarding')=>{
+   const r=await mf.dispatchFetch('http://localhost/api/onboarding',{method:'POST',headers:{'oai-authenticated-user-id':'owner','oai-authenticated-user-email':'owner@example.test','Content-Type':'application/json',Origin:'http://localhost','Idempotency-Key':key},body:JSON.stringify(body)});
    return {status:r.status,data:await r.json()};
   };
   const page=await mf.dispatchFetch('http://localhost/',{headers:{accept:'text/html'}});
@@ -27,8 +33,9 @@ test('built worker renders training and isolates durable profiles and coach perm
   assert.match(html,/<meta(?=[^>]*name="viewport")(?=[^>]*width=device-width)(?=[^>]*viewport-fit=cover)/);
   assert.equal((await call(null)).status,401);
   assert.equal((await call('owner',{type:'create'},'http://evil.test')).status,403);
-  const created=await call('owner',{type:'create',nickname:'Test goalie',team:'Test team',ageBand:'10–12',adultConfirmed:true});
-  assert.equal(created.status,201);const profileId=created.data.id;
+  assert.equal((await call('owner',{type:'create',nickname:'Bypass',team:'',ageBand:'10–12',adultConfirmed:true})).status,410);
+  const created=await onboard({nickname:'Test goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:[],plannedDays:['monday'],missionMinutes:15,consentAccepted:true,consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',optionalPermissions:{analytics:false,notifications:false,clips:false}});
+  assert.equal(created.status,201);const profileId=created.data.profileId;
   assert.equal((await call('other')).data.profiles.length,0);
   assert.equal((await call('other',{type:'export',profileId})).status,404);
   assert.equal((await call('owner',{type:'action',profileId,revision:0,action:{type:'set',drillId:'warm',setIndex:0}})).status,200);

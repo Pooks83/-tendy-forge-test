@@ -1,5 +1,5 @@
 import {trainingDb} from '@/lib/training-store';
-import {newTrainingState,normalizeTrainingState} from '@/lib/training.mjs';
+import {normalizeTrainingState} from '@/lib/training.mjs';
 import {applyAction} from '@/lib/training-actions.mjs';
 import {getAdultIdentity} from '@/lib/account-identity';
 export const dynamic='force-dynamic';
@@ -29,10 +29,7 @@ export async function POST(request:Request) {
  try {
   const db=trainingDb();
   if(input.type==='create') {
-   if(input.adultConfirmed!==true||typeof input.nickname!=='string'||input.nickname.trim().length<1||input.nickname.length>24||typeof input.team!=='string'||input.team.length>60||!['10–12','13–15'].includes(input.ageBand))return reply({error:'An adult must provide a nickname, age band, and team.'},400);
-   const count=await db.prepare('SELECT count(*) AS n FROM training_profiles WHERE owner_id=?').bind(user.id).first<{n:number}>();if((count?.n??0)>=8)return reply({error:'Up to 8 household profiles are supported.'},400);
-   const id=crypto.randomUUID();
-   await db.prepare('INSERT INTO training_profiles (id,owner_id,nickname,team,age_band,state,created_at) VALUES (?,?,?,?,?,?,?)').bind(id,user.id,input.nickname.trim(),input.team.trim(),input.ageBand,JSON.stringify(newTrainingState()),new Date().toISOString()).run();return reply({id},201);
+   return reply({error:{code:'ONBOARDING_REQUIRED',message:'Use the parent permission and setup flow to add a goalie.'}},410);
   }
   if(typeof input.profileId!=='string')return reply({error:'Choose a profile'},400);
   const row=await accessible(input.profileId,user);if(!row)return reply({error:'Profile unavailable'},404);

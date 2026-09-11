@@ -36,6 +36,10 @@ export const idempotencyRecords=sqliteTable('idempotency_records',{
  accountId:text('account_id').notNull(),operationKey:text('operation_key').notNull(),operation:text('operation').notNull(),responseJson:text('response_json').notNull(),createdAt:text('created_at').notNull(),
 },t=>[primaryKey({columns:[t.accountId,t.operationKey]})]);
 
+export const onboardingDrafts=sqliteTable('onboarding_drafts',{
+ accountId:text('account_id').primaryKey(),step:text('step').notNull(),draftJson:text('draft_json').notNull(),operationKey:text('operation_key').notNull(),consentVersion:text('consent_version').notNull(),policyVersion:text('policy_version').notNull(),permissionAcceptedAt:text('permission_accepted_at').notNull(),updatedAt:text('updated_at').notNull(),
+});
+
 export const firstChallengeResults=sqliteTable('first_challenge_results',{
  profileId:text('profile_id').primaryKey().references(()=>profiles.id,{onDelete:'cascade'}),protocolVersion:text('protocol_version').notNull(),status:text('status').notNull(),startedAt:text('started_at').notNull(),completedAt:text('completed_at'),resultJson:text('result_json').notNull().default('{}'),updatedAt:text('updated_at').notNull(),
 });
