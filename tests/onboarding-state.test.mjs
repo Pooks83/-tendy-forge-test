@@ -44,6 +44,8 @@ test('saved account draft resumes the exact consented setup step and operation',
   step:'gear',
   operationKey:'operation-resume-1',
   consentAccepted:true,
+  consentVersion:'tf-parent-consent-v1.4',
+  policyVersion:'tf-privacy-v1.4',
   data:{nickname:'Finn',ageBand:'10–12',catches:'right',experience:'developing',equipment:['tennis-ball'],plannedDays:[],missionMinutes:25,analyticsAllowed:false},
  });
  assert.equal(restored.step,'gear');
@@ -57,4 +59,10 @@ test('invalid or pre-consent saved state cannot bypass parent permission',()=>{
  assert.equal(restored.step,'welcome');
  assert.equal(restored.data.nickname,'');
  assert.notEqual(restored.operationKey,'unsafe');
+});
+
+test('an old consent contract cannot silently restore child setup data',()=>{
+ const restored=state.restoreOnboardingState({step:'gear',operationKey:'operation-old-1',consentAccepted:true,consentVersion:'old-consent',policyVersion:'old-policy',data:{nickname:'Child'}});
+ assert.equal(restored.step,'welcome');
+ assert.equal(restored.data.nickname,'');
 });

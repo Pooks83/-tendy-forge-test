@@ -48,7 +48,7 @@ export function normalizeOnboardingDraft(raw:unknown,operationKey:string){
 
 export async function readOnboardingDraft(db:D1Database,identity:AdultIdentity){
  const row=await db.prepare('SELECT step,draft_json,operation_key,consent_version,policy_version FROM onboarding_drafts WHERE account_id=?').bind(identity.id).first<DraftRow>();
- if(!row)return {draft:null};
+ if(!row||row.consent_version!==CONSENT_VERSION||row.policy_version!==POLICY_VERSION)return {draft:null};
  return {draft:{step:row.step,operationKey:row.operation_key,consentAccepted:true,consentVersion:row.consent_version,policyVersion:row.policy_version,data:JSON.parse(row.draft_json)}};
 }
 

@@ -148,3 +148,13 @@ test('leaving consented setup removes only that adult account draft',async()=>{
   assert.equal((await db.prepare("SELECT count(*) AS n FROM onboarding_drafts WHERE account_id='other'").first()).n,1);
  }finally{await mf.dispose();}
 });
+
+test('an outdated consent draft is not returned to the setup UI',async()=>{
+ const {mf,db}=await setup();
+ try{
+  await db.prepare('INSERT INTO onboarding_drafts(account_id,step,draft_json,operation_key,consent_version,policy_version,permission_accepted_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').bind('parent','gear','{"nickname":"Old child data"}','old-draft-key','old-consent','old-policy','2026-01-01T00:00:00Z','2026-01-01T00:00:00Z').run();
+  const response=await callDraft(mf);
+  assert.equal(response.status,200);
+  assert.equal(response.data.draft,null);
+ }finally{await mf.dispose();}
+});
