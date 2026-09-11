@@ -3,7 +3,7 @@ import {newTrainingState,normalizeTrainingState} from '@/lib/training.mjs';
 import {applyAction} from '@/lib/training-actions.mjs';
 import {getAdultIdentity} from '@/lib/account-identity';
 export const dynamic='force-dynamic';
-type Row={id:string;owner_id:string;nickname:string;team:string;age_band:string;state:string;revision:number};
+type Row={id:string;owner_id:string;nickname:string;team:string;age_band:string;state:string;revision:number;catches:string|null;experience:string|null;equipment_json:string|null;planned_days_json:string|null;mission_minutes:number|null;setup_status:string};
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 async function accessible(id:string,user:{id:string;email:string}) {
  const row=await trainingDb().prepare('SELECT p.* FROM training_profiles p WHERE p.id=? AND (p.owner_id=? OR EXISTS (SELECT 1 FROM training_coach_grants g WHERE g.profile_id=p.id AND g.email=?))').bind(id,user.id,user.email).first<Row>();
@@ -14,7 +14,7 @@ export async function GET() {
  try {
   const db=trainingDb();
   const rows=await db.prepare('SELECT p.* FROM training_profiles p WHERE p.owner_id=? OR EXISTS (SELECT 1 FROM training_coach_grants g WHERE g.profile_id=p.id AND g.email=?) ORDER BY p.created_at').bind(user.id,user.email).all<Row>();
-  const profiles=await Promise.all(rows.results.map(async r=>({id:r.id,nickname:r.nickname,team:r.team,ageBand:r.age_band,role:r.owner_id===user.id?'owner':'coach',revision:r.revision,state:normalizeTrainingState(JSON.parse(r.state)),grants:r.owner_id===user.id?(await db.prepare('SELECT email FROM training_coach_grants WHERE profile_id=?').bind(r.id).all<{email:string}>()).results.map(g=>g.email):[]})));
+  const profiles=await Promise.all(rows.results.map(async r=>({id:r.id,nickname:r.nickname,team:r.team,ageBand:r.age_band,role:r.owner_id===user.id?'owner':'coach',revision:r.revision,state:normalizeTrainingState(JSON.parse(r.state)),grants:r.owner_id===user.id?(await db.prepare('SELECT email FROM training_coach_grants WHERE profile_id=?').bind(r.id).all<{email:string}>()).results.map(g=>g.email):[],catches:r.catches,experience:r.experience,equipment:r.equipment_json?JSON.parse(r.equipment_json):[],plannedDays:r.planned_days_json?JSON.parse(r.planned_days_json):[],missionMinutes:r.mission_minutes,setupStatus:r.setup_status})));
   return reply({profiles});
  } catch(e){console.error('Training load failed',e instanceof Error?e.message:'error');return reply({error:'Training could not be loaded. Your saved progress has not been changed.'},503);}
 }

@@ -16,7 +16,7 @@ function migratedDatabase(){
 test('identity migration creates every canonical TF-MVP-003 table',()=>{
  const db=migratedDatabase();
  const tables=db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name").all().map(row=>row.name);
- for(const name of ['active_player_context','audit_events','consent_records','deletion_requests','guardian_player','idempotency_records','privacy_preferences'])assert.ok(tables.includes(name),`${name} missing`);
+ for(const name of ['active_player_context','audit_events','consent_records','deletion_requests','first_challenge_results','guardian_player','idempotency_records','privacy_preferences'])assert.ok(tables.includes(name),`${name} missing`);
 });
 
 test('identity migration adds setup fields without changing legacy training state',()=>{

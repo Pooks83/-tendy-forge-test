@@ -13,7 +13,7 @@ async function setup(){
  return {mf,db};
 }
 
-const setupInput=nickname=>({nickname,ageBand:'8–10',catches:'left',experience:'developing',equipment:[],plannedDays:['monday'],missionMinutes:15,consentAccepted:true,consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',optionalPermissions:{analytics:false,notifications:false,clips:false}});
+const setupInput=nickname=>({nickname,ageBand:'10–12',catches:'left',experience:'developing',equipment:[],plannedDays:['monday'],missionMinutes:15,consentAccepted:true,consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',optionalPermissions:{analytics:false,notifications:false,clips:false}});
 const headers=(user,key)=>({'oai-authenticated-user-id':user,'oai-authenticated-user-email':`${user}@example.test`,...(key?{'Content-Type':'application/json',Origin:'http://localhost','Idempotency-Key':key}:{})});
 
 async function create(mf,user,nickname,key){

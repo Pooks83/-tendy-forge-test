@@ -15,6 +15,13 @@
       "when": 1789067170145,
       "tag": "0001_conscious_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789104128580,
+      "tag": "0002_worried_shotgun",
+      "breakpoints": true
     }
   ]
 }

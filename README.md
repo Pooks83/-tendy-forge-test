@@ -1,14 +1,17 @@
-# Goalie Forge
+# Tendie Forge
 
-Goalie Forge is the St. Clair Shores Saints’ mobile-first, adult-managed training companion for goalies ages 10–15. Every assigned activity is at-home and off-ice.
+Tendie Forge is an iOS-first, adult-managed development companion for goalies approximately ages 8–14. The current web Worker is the reconciled Version 8 baseline while native packaging remains a later release work package.
 
 ## Product architecture
 
-- `/` renders one role-aware application for guests, parents/guardians, players using an adult-managed profile, and authorized coaches.
-- `/api/training` is the authenticated data boundary for profiles, drills, evaluations, skill evidence, coach grants, exports, and deletion.
-- ChatGPT sign-in establishes adult identity. The private Site audience controls entry; profile ownership and coach grants are enforced separately by the API.
-- D1 stores training profiles, optimistic revisions, progress, and coach relationships.
-- Home, Train, Progress, and Profile use one responsive navigation and shared design system.
+- `/` renders access, parent setup/review, player first-value, player, and adult/coach states.
+- ChatGPT/Sites authentication establishes the adult account. It is not the player identity or a relationship grant.
+- `/api/onboarding` creates or reconciles an adult-owned player, versioned consent, privacy preferences, active context, audit event, and idempotency result.
+- `/api/player-context` authorizes one active goalie at a time; `/api/player` and `/api/player-action` expose only a whitelisted child-safe projection.
+- `/api/first-challenge` persists the versioned 60-second first-challenge state and result exactly once.
+- `/api/training` remains the adult/coach boundary for profile administration, evidence, evaluation, export, deletion, and legacy training actions.
+- D1 separately stores profiles, guardian relationships, consent, privacy preferences, active context, deletion requests, audit events, idempotency records, first-challenge results, and legacy coach grants.
+- Player navigation is Today, Journey, Progress, and Profile. Adult data is not fetched before a valid child context chooses the player surface.
 
 ## Training model
 
@@ -20,10 +23,16 @@ Goalie Forge is the St. Clair Shores Saints’ mobile-first, adult-managed train
 
 ## Privacy and permissions
 
-- A parent/guardian owns each player profile.
+- A parent/guardian relationship is stored separately from the adult account and player profile.
 - A coach must have both private Site access and a profile-specific grant.
 - Coaches may record evaluations and skill evidence; they cannot complete player drills, resume a safety-stopped session, advance a path, share access, export data, or delete a profile.
 - The product does not collect child email addresses, exact birth dates, photos, public profiles, rankings, or direct messages.
+- Required parental permission is versioned and stored separately from optional analytics, notification, and clip preferences. Declining an optional preference does not block core training.
+- Legacy Version 8 profiles retain their IDs, history, revisions, export/delete access, and coach grants, but require parent consent/setup review before child handoff.
+
+## Release gates
+
+Implementation does not constitute legal or safety approval. Launch remains blocked until qualified reviewers approve youth-training content and safety language, privacy/parental-consent handling, production disclosures and vendors, and the required real-device/TestFlight evidence. No unreviewed activity or unsupported age selection may receive a training prescription.
 
 ## Development
 

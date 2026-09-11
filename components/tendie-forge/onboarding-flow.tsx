@@ -1,0 +1,44 @@
+"use client";
+import {type ReactNode,useReducer} from 'react';
+import {ArrowLeft,Check,Shield} from 'lucide-react';
+import {CONSENT_VERSION,POLICY_VERSION} from '@/lib/identity-contract.mjs';
+import {initialOnboardingState,onboardingReducer} from '@/lib/onboarding-state.mjs';
+
+type Step='welcome'|'adult-account'|'parent-permission'|'create-goalie'|'gear'|'training-plan'|'handoff';
+type LegacyProfile={id:string;nickname:string;ageBand:string;catches?:string|null;experience?:string|null;equipment?:string[];plannedDays?:string[];missionMinutes?:number|null};
+type Props={initialStep?:Step;signOutLink:ReactNode;onHandoff:(profileId:string)=>Promise<void>;onCoach?:()=>void;legacyProfile?:LegacyProfile};
+const equipment=[['tennis-ball','Tennis ball'],['reaction-ball','Reaction ball'],['wall-space','Safe wall space'],['resistance-band','Resistance band'],['cones','Cones']] as const;
+const days=[['monday','Monday'],['tuesday','Tuesday'],['wednesday','Wednesday'],['thursday','Thursday'],['friday','Friday'],['saturday','Saturday'],['sunday','Sunday']] as const;
+
+async function saveGoalie(data:Record<string,unknown>,operationKey:string,legacyProfileId?:string){
+ const response=await fetch('/api/onboarding',{method:legacyProfileId?'PATCH':'POST',headers:{'Content-Type':'application/json','Idempotency-Key':operationKey},body:JSON.stringify({...data,...(legacyProfileId?{profileId:legacyProfileId}:{})})});
+ const result=await response.json() as {profileId?:string;error?:{message?:string}};
+ if(!response.ok||!result.profileId)throw new Error(result.error?.message||'Your setup was not changed. Try again.');
+ return result.profileId;
+}
+
+export function OnboardingFlow({initialStep='welcome',signOutLink,onHandoff,onCoach,legacyProfile}:Props){
+ const [state,dispatch]=useReducer(onboardingReducer,undefined,()=>{const initial=initialOnboardingState();return {...initial,step:initialStep,data:{...initial.data,...(legacyProfile?{nickname:legacyProfile.nickname,ageBand:legacyProfile.ageBand,catches:legacyProfile.catches||'left',experience:legacyProfile.experience||'new',equipment:legacyProfile.equipment||[],plannedDays:legacyProfile.plannedDays||[],missionMinutes:legacyProfile.missionMinutes||25}:{})}};});
+ const set=(field:string,value:unknown)=>dispatch({type:'SET',field,value});
+ const back=state.step!=='welcome'&&state.step!=='handoff'?<button type="button" className="tf-link tf-onboarding-back" onClick={()=>dispatch({type:'BACK'})}><ArrowLeft size={17}/>Back</button>:null;
+ const accountActions=<div className="tf-access-account-actions">{signOutLink}</div>;
+ const toggleEquipment=(id:string)=>set('equipment',state.data.equipment.includes(id)?state.data.equipment.filter((item:string)=>item!==id):[...state.data.equipment,id]);
+ const toggleDay=(id:string)=>set('plannedDays',state.data.plannedDays.includes(id)?state.data.plannedDays.filter((item:string)=>item!==id):[...state.data.plannedDays,id]);
+ async function submit(){
+  dispatch({type:'SUBMIT_STARTED'});
+  try{
+   const profileId=await saveGoalie({nickname:state.data.nickname,ageBand:state.data.ageBand,catches:state.data.catches,experience:state.data.experience,equipment:state.data.equipment,plannedDays:state.data.plannedDays,missionMinutes:state.data.missionMinutes,consentAccepted:state.data.consentAccepted,consentVersion:CONSENT_VERSION,policyVersion:POLICY_VERSION,optionalPermissions:{analytics:state.data.analyticsAllowed,notifications:false,clips:false}},state.operationKey,legacyProfile?.id);
+   dispatch({type:'SUBMIT_SUCCEEDED',profileId,nickname:state.data.nickname.trim()});
+  }catch(error){dispatch({type:'SUBMIT_FAILED',message:error instanceof Error?error.message:'Your setup was not changed. Try again.'});}
+ }
+ return <section className="tf-onboarding" aria-live="polite">
+  {back}
+  {state.step==='welcome'&&<><p className="tf-kicker">PARENT SETUP</p><h2>Build a private training plan for your goalie.</h2><p>You handle permission and setup once. Your goalie gets one clear next step.</p><button className="tf-primary" onClick={()=>dispatch({type:'NEXT'})}>I’M A PARENT</button>{onCoach&&<button className="tf-link" onClick={onCoach}>I’m a coach</button>}{accountActions}</>}
+  {state.step==='adult-account'&&<><p className="tf-kicker">ADULT ACCOUNT</p><h2>Your account manages privacy and setup.</h2><p>We have not collected any information about your child yet.</p><button className="tf-primary" onClick={()=>dispatch({type:'NEXT'})}>CONTINUE</button>{accountActions}</>}
+  {state.step==='parent-permission'&&<><p className="tf-kicker">PARENT PERMISSION</p><h2>Choose what you approve.</h2><label className="tf-consent-card"><input type="checkbox" checked={state.data.consentAccepted} onChange={event=>set('consentAccepted',event.target.checked)}/><span><strong>Required permission</strong><small>Create a private goalie profile and save training, progress, and safety information.</small></span></label><label className="tf-consent-card optional"><input type="checkbox" checked={state.data.analyticsAllowed} onChange={event=>set('analyticsAllowed',event.target.checked)}/><span><strong>Optional</strong><small>Share pseudonymous reliability data to help improve Tendie Forge. You can say no and still use training.</small></span></label><button className="tf-primary" disabled={!state.data.consentAccepted} onClick={()=>dispatch({type:'NEXT'})}>CREATE GOALIE</button>{accountActions}</>}
+  {state.step==='create-goalie'&&<form className="tf-form" onSubmit={event=>{event.preventDefault();dispatch({type:'NEXT'});}}><p className="tf-kicker">CREATE GOALIE</p><h2>Tell us only what training needs.</h2><label>Player nickname<input required maxLength={24} value={state.data.nickname} onChange={event=>set('nickname',event.target.value)} autoComplete="off"/></label><label>Age band<select required value={state.data.ageBand} onChange={event=>set('ageBand',event.target.value)}><option value="" disabled>Choose an age band</option><option>Under 10</option><option>10–12</option><option>13–15</option><option>16 or older</option></select></label>{state.data.ageBand==='16 or older'&&<div className="tf-error" role="alert">This program is designed for ages 10–15. We can’t assign this training for the age you selected. Choose Back to review the setup.</div>}<label>Catches with<select value={state.data.catches} onChange={event=>set('catches',event.target.value)}><option value="left">Left hand</option><option value="right">Right hand</option></select></label><label>Goalie experience<select value={state.data.experience} onChange={event=>set('experience',event.target.value)}><option value="new">New goalie</option><option value="developing">Developing goalie</option><option value="experienced">Experienced goalie</option></select></label><button className="tf-primary" disabled={!state.data.nickname.trim()||!state.data.ageBand||state.data.ageBand==='16 or older'}>BUILD SETUP</button></form>}
+  {state.step==='gear'&&<><p className="tf-kicker">GEAR</p><h2>What is available at home?</h2><p>No equipment is required. Leave everything unselected for body-only missions.</p><div className="tf-choice-grid">{equipment.map(([id,label])=><label key={id} className="tf-choice"><input type="checkbox" checked={state.data.equipment.includes(id)} onChange={()=>toggleEquipment(id)}/><span>{label}</span></label>)}</div><button className="tf-primary" onClick={()=>dispatch({type:'NEXT'})}>NEXT</button></>}
+  {state.step==='training-plan'&&<><p className="tf-kicker">TRAINING PLAN</p><h2>Choose a plan that fits real life.</h2><fieldset className="tf-choice-group"><legend>Mission length</legend>{[15,25,35].map(minutes=><label key={minutes} className="tf-choice"><input type="radio" name="missionMinutes" checked={state.data.missionMinutes===minutes} onChange={()=>set('missionMinutes',minutes)}/><span>{minutes} minutes</span></label>)}</fieldset><fieldset className="tf-choice-group"><legend>Planned days</legend><div className="tf-day-grid">{days.map(([id,label])=><label key={id} className="tf-choice"><input type="checkbox" checked={state.data.plannedDays.includes(id)} onChange={()=>toggleDay(id)}/><span>{label}</span></label>)}</div></fieldset>{state.error&&<p className="tf-error" role="alert">{state.error}</p>}<button className="tf-primary" disabled={state.submitting||state.data.plannedDays.length===0} onClick={()=>void submit()}>{state.submitting?'SAVING…':'HAND IT TO YOUR GOALIE'}</button></>}
+  {state.step==='handoff'&&<><span className="tf-handoff-icon"><Shield size={36}/><Check size={20}/></span><p className="tf-kicker">SETUP COMPLETE</p><h2>Hand the phone to {state.data.nickname}.</h2><p>Adult setup is closed. Your goalie will see only their training experience.</p><button className="tf-primary" onClick={()=>void onHandoff(state.profileId)}>I’M {state.data.nickname.toUpperCase()}</button></>}
+ </section>;
+}

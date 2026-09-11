@@ -49,10 +49,51 @@ test('signed-in empty account has complete parent coach and sign-out paths',asyn
     signOutLink:React.createElement('a',{href:'/signout'},'Sign out'),
     onPreview:()=>{},onReload:()=>{},onCreated:async()=>{},
   }));
-  assert.match(html,/I’m a parent or guardian/);
+  assert.match(html,/I’M A PARENT/);
   assert.match(html,/I’m a coach/);
   assert.match(html,/Sign out/);
   assert.doesNotMatch(html,/Main navigation/);
+});
+test('canonical onboarding keeps child data after consent and supports no-equipment planning',async()=>{
+  const {OnboardingFlow}=await vite.ssrLoadModule('/components/tendie-forge/onboarding-flow.tsx');
+  assert.equal(typeof OnboardingFlow,'function');
+  const render=initialStep=>renderToStaticMarkup(React.createElement(OnboardingFlow,{initialStep,signOutLink:React.createElement('a',{href:'/signout'},'Sign out'),onHandoff:async()=>{}}));
+  const welcome=render('welcome');
+  assert.match(welcome,/I’M A PARENT/);
+  assert.doesNotMatch(welcome,/Player nickname/);
+  assert.doesNotMatch(welcome,/Player navigation/);
+  const permission=render('parent-permission');
+  assert.match(permission,/Required permission/);
+  assert.match(permission,/Optional/);
+  const profile=render('create-goalie');
+  assert.match(profile,/Player nickname/);
+  assert.match(profile,/Catches with/);
+  assert.match(profile,/Goalie experience/);
+  assert.match(profile,/Under 10/);
+  assert.match(profile,/10–12/);
+  assert.match(profile,/13–15/);
+  assert.match(profile,/16 or older/);
+  const gear=render('gear');
+  assert.match(gear,/No equipment is required/);
+  const plan=render('training-plan');
+  assert.match(plan,/15 minutes/);
+  assert.match(plan,/25 minutes/);
+  assert.match(plan,/35 minutes/);
+  assert.match(plan,/Monday/);
+});
+test('child first value defines the four canonical screens without rank or tutorial copy',async()=>{
+  const {PlayerFirstValueFlow}=await vite.ssrLoadModule('/components/tendie-forge/player-first-value.tsx');
+  const player={profile:{id:'p1',nickname:'Goalie',plannedDays:['monday'],missionMinutes:15},training:{revision:0}};
+  const render=initialStep=>renderToStaticMarkup(React.createElement(PlayerFirstValueFlow,{player,initialStep,onStartMission:()=>{},onStop:async()=>{}}));
+  assert.match(render('goalie-welcome'),/LET’S GO/);
+  assert.match(render('first-challenge'),/60-second first challenge/);
+  assert.match(render('challenge-active'),/60/);
+  const win=render('first-win');
+  assert.match(win,/SEE MY FIRST MISSION/);
+  assert.doesNotMatch(win,/rank|percentile/i);
+  const today=render('first-today');
+  assert.match(today,/START MISSION/);
+  assert.doesNotMatch(today,/Main navigation/);
 });
 test('training save feedback exposes the error and reload action, and stays absent without an error',async()=>{
  const {TrainingSaveError}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');

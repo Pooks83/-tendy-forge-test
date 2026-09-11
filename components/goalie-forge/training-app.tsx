@@ -10,21 +10,34 @@ import {applyAction} from '@/lib/training-actions.mjs';
 import {parseTrainingLocation,trainingLocation,resolveTrainingDrill} from '@/lib/training-navigation.mjs';
 import {readTrainingResponse} from '@/lib/training-request.mjs';
 import {DrillMap} from './drill-map';
+import {OnboardingFlow} from '@/components/tendie-forge/onboarding-flow';
+import {PlayerFirstValueFlow} from '@/components/tendie-forge/player-first-value';
 type TrainingState=ReturnType<typeof newTrainingState>;
-type Profile={id:string;nickname:string;team:string;ageBand:string;role:'owner'|'coach';revision:number;state:TrainingState;grants:string[]};
+type Profile={id:string;nickname:string;team:string;ageBand:string;role:'owner'|'coach'|'player';revision:number;state:TrainingState;grants:string[];catches?:string|null;experience?:string|null;equipment?:string[];plannedDays?:string[];missionMinutes?:number|null;setupStatus?:string};
+type PlayerProjection={profile:{id:string;nickname:string;ageBand:string;catches:string;experience:string;equipment:string[];plannedDays:string[];missionMinutes:number;setupStatus:string;revision:number};training:TrainingState};
 type Action={type:string;drillId?:string;setIndex?:number;answer?:number;skillId?:number;passed?:boolean;note?:string;ratings?:number[];cause?:string};
 type Drill=ReturnType<typeof buildSession>['blocks'][number];
 const NAV=[['Home',Home],['Train',Dumbbell],['Progress',TrendingUp],['Profile',User]] as const;
+const PLAYER_NAV=[['Today','Home',Home],['Journey','Train',Dumbbell],['Progress','Progress',TrendingUp],['Profile','Profile',User]] as const;
 const RUBRICS:Record<string,string>={Move:'Small side jumps or steps end balanced for 2 seconds, without pain or knee collapse.',See:'Eyes follow 8 of 10 gentle soft-ball throws all the way into the hands, allowing an easier version.',React:'Responds to the actual ball direction, not a fake, on 4 of 5 gentle attempts.',Recover:'Looks first, steps to the soft ball, then resets under control on 5 of 6 attempts.',Think:'Explains the useful response and why in 3 different reading situations.',Compete:'Uses a reset after a mistake and applies one specific coaching cue on the next attempt.'};
 async function request<T={id:string;state:TrainingState;revision:number}>(body:unknown):Promise<T> {
  const response=await fetch('/api/training',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  return await readTrainingResponse(response) as T;
+}
+async function requestPlayerAction(body:unknown,operationKey:string):Promise<PlayerProjection>{
+ const response=await fetch('/api/player-action',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':operationKey},body:JSON.stringify(body)});
+ return await readTrainingResponse(response) as PlayerProjection;
 }
 async function fetchTrainingProfiles():Promise<{mode:'guest'|'signed-in';profiles:Profile[]}> {
  const response=await fetch('/api/training',{cache:'no-store'});
  if(response.status===401)return {mode:'guest',profiles:[]};
  const data=await readTrainingResponse(response) as {profiles:Profile[]};
  return {mode:'signed-in',profiles:data.profiles};
+}
+async function fetchPlayerProjection():Promise<PlayerProjection|null>{
+ const response=await fetch('/api/player',{cache:'no-store'});
+ if(response.status===409||response.status===403)return null;
+ return await readTrainingResponse(response) as PlayerProjection;
 }
 function Brand({onHome}:{onHome?:()=>void}) {
  const content=<><span className="tf-brand-mark"><Shield size={23}/></span><span className="tf-brand-copy">GOALIE <b>FORGE</b><small>ST. CLAIR SHORES SAINTS</small></span></>;
@@ -46,40 +59,48 @@ export function AccessShell({mode,error,signInLink,signOutLink,onPreview,onReloa
 }
 export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signOutLink:ReactNode}){
  const [tab,setTab]=useState('Home');const [profiles,setProfiles]=useState<Profile[]>([]);const [active,setActive]=useState('');
+ const [player,setPlayer]=useState<PlayerProjection|null>(null);const [showFirstValue,setShowFirstValue]=useState(false);const [resumeFirstValue,setResumeFirstValue]=useState(false);
  const [mode,setMode]=useState<'loading'|'signed-in'|'guest'|'error'>('loading');const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const [preview,setPreview]=useState(false);const [sample,setSample]=useState(newTrainingState);const [selected,setSelected]=useState<string|null>(null);
  const [celebration,setCelebration]=useState('');const busyRef=useRef(false);const dialogRef=useRef<HTMLDivElement>(null);
- const profile=profiles.find(p=>p.id===active)||profiles[0];const state=preview?sample:profile?.state||newTrainingState();
+ const adultProfile=profiles.find(p=>p.id===active)||profiles[0];
+ const profile:Profile|undefined=player?{...player.profile,team:'',role:'player',state:player.training,grants:[]}:adultProfile;
+ const state=preview?sample:player?.training||adultProfile?.state||newTrainingState();
  const path=PATHS.find(p=>p.id===state.pathId)!;const session=useMemo(()=>buildSession(state.pathId,state.week,state.day,state.cycle||0),[state.pathId,state.week,state.day,state.cycle]);
  const sessionDrillIds=useMemo(()=>session.blocks.map(item=>item.id),[session]);
  const completed=session.blocks.filter(d=>isDrillDone(state,session,d)).length;
  const sessionDone=state.sessions.some((s:{id:string})=>s.id===session.id);
- const enabled=preview||Boolean(profile);const drillId=resolveTrainingDrill(enabled,selected,sessionDrillIds);
+ const playerMode=Boolean(player);const enabled=preview||Boolean(profile);const drillId=resolveTrainingDrill(enabled&&!showFirstValue,selected,sessionDrillIds);
  const drill=session.blocks.find(d=>d.id===drillId);const coach=profile?.role==='coach'&&!preview;
  const skillChecks=state.checks as Array<{group:string;pathId:string;passed:boolean;date:string;skillId?:number}>;
  const navigate=useCallback((view:string,drillId:string|null=null,replace=false)=>{setTab(view);setSelected(drillId);if(typeof window!=='undefined'){const url=trainingLocation({view,drill:drillId});window.history[replace?'replaceState':'pushState']({},'',url);}},[]);
- const load=useCallback(async()=>{
+ const loadAdult=useCallback(async()=>{
   try{const result=await fetchTrainingProfiles();setProfiles(result.profiles);setMode(result.mode);setError('');}
   catch(e){setError(e instanceof Error?e.message:'Cannot load training');setMode('error');}
  },[]);
- useEffect(()=>{let active=true;void fetchTrainingProfiles().then(result=>{if(!active)return;setProfiles(result.profiles);setMode(result.mode);setError('');}).catch(e=>{if(!active)return;setError(e instanceof Error?e.message:'Cannot load training');setMode('error');});return()=>{active=false;};},[]);
+ const loadPlayer=useCallback(async()=>{try{const result=await fetchPlayerProjection();if(result){setPlayer(result);setProfiles([]);setMode('signed-in');setError('');}return result;}catch(e){setError(e instanceof Error?e.message:'Cannot load your goalie');return null;}},[]);
+ const load=useCallback(async()=>{if(player)await loadPlayer();else await loadAdult();},[player,loadPlayer,loadAdult]);
+ useEffect(()=>{let current=true;void fetch('/api/player',{cache:'no-store'}).then(async response=>{if(!current)return;if(response.ok){const projected=await readTrainingResponse(response) as PlayerProjection;if(!current)return;setPlayer(projected);setProfiles([]);setMode('signed-in');setResumeFirstValue(true);setShowFirstValue(true);setError('');return;}if(response.status===401){setMode('guest');setProfiles([]);setError('');return;}const result=await fetchTrainingProfiles();if(!current)return;setProfiles(result.profiles);setMode(result.mode);setError('');}).catch(e=>{if(!current)return;setError(e instanceof Error?e.message:'Cannot load training');setMode('error');});return()=>{current=false;};},[]);
  useEffect(()=>{const sync=()=>{const next=parseTrainingLocation(window.location.search,sessionDrillIds);setTab(next.view);setSelected(next.drill);};sync();window.addEventListener('popstate',sync);return()=>window.removeEventListener('popstate',sync);},[sessionDrillIds]);
  async function act(action:Action){
   if(busyRef.current)return false;busyRef.current=true;setBusy(true);setError('');
   try{
    if(preview){setSample(applyAction(sample,action,{role:'owner',id:'preview-adult'}));return true;}
    if(!profile)throw new Error('An adult must set up a profile first.');
+   if(playerMode){const operationKey=['player',profile.id,profile.revision,action.type,action.drillId??'',action.setIndex??'',action.answer??''].join(':');const projected=await requestPlayerAction({revision:profile.revision,action},operationKey);setPlayer(projected);return true;}
    const result=await request({type:'action',profileId:profile.id,revision:profile.revision,action});
    setProfiles(items=>items.map(p=>p.id===profile.id?{...p,state:result.state,revision:result.revision}:p));return true;
   }catch(e){setError(e instanceof Error?e.message:'Save failed');return false;}finally{busyRef.current=false;setBusy(false);}
  }
  function celebrate(name:string){setCelebration(name);toast.success('SAVE MADE!',{description:name+' complete. That is one more skill rep in the bank.',duration:3500});}
  useEffect(()=>{if(!celebration)return;const timer=setTimeout(()=>setCelebration(''),2800);return()=>clearTimeout(timer);},[celebration]);
- if(!enabled)return <AccessShell mode={mode} error={error} signInLink={signInLink} signOutLink={signOutLink} onPreview={()=>setPreview(true)} onReload={()=>void load()} onCreated={async id=>{setActive(id);await load();}}/>;
+ if(adultProfile?.role==='owner'&&adultProfile.setupStatus==='legacy-review-required')return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><p className="tf-kicker">SETUP REVIEW</p><h1>Keep the progress. Complete the missing setup.</h1><p>Your saved sessions and coach access stay attached to the same goalie profile.</p><OnboardingFlow initialStep="parent-permission" legacyProfile={adultProfile} signOutLink={signOutLink} onHandoff={async()=>{const projected=await loadPlayer();if(projected){setResumeFirstValue(false);setShowFirstValue(true);}}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
+ if(!enabled)return <AccessShell mode={mode} error={error} signInLink={signInLink} signOutLink={signOutLink} onPreview={()=>setPreview(true)} onReload={()=>void loadAdult()} onCreated={async()=>{const projected=await loadPlayer();if(projected){setResumeFirstValue(false);setShowFirstValue(true);}}}/>;
+ if(player&&showFirstValue)return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><PlayerFirstValueFlow player={player} resume={resumeFirstValue} onStartMission={()=>setShowFirstValue(false)} onStop={async()=>{await act({type:'stop'});}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
  return <main className="tf-app">
   <a className="tf-skip" href="#training-main">Skip to training</a>
-  <header className="tf-header"><Brand onHome={()=>navigate('Home')}/><div className="tf-header-end"><span className="tf-office">At home · Off ice</span>{profile&&<span className="tf-adult-label">{coach?'Coach view':'Adult managed'}</span>}<button className="tf-avatar" onClick={()=>navigate('Profile')} aria-label={coach?'Open coach workspace':'Open profile and adult tools'}>{profile?.nickname?.slice(0,1)||'G'}</button></div></header>
-  <div className="tf-frame"><nav className="tf-nav" aria-label="Main navigation">{NAV.map(([name,Icon])=><button key={name} aria-current={tab===name?'page':undefined} className={tab===name?'active':''} onClick={()=>navigate(name)}><Icon size={21}/><span>{name}</span></button>)}</nav>
+  <header className="tf-header"><Brand onHome={()=>navigate('Home')}/><div className="tf-header-end"><span className="tf-office">At home · Off ice</span>{profile&&!playerMode&&<span className="tf-adult-label">{coach?'Coach view':'Adult managed'}</span>}<button className="tf-avatar" onClick={()=>navigate('Profile')} aria-label={playerMode?'Open goalie profile':coach?'Open coach workspace':'Open profile and adult tools'}>{profile?.nickname?.slice(0,1)||'G'}</button></div></header>
+  <div className="tf-frame"><nav className="tf-nav" aria-label="Main navigation">{playerMode?PLAYER_NAV.map(([label,name,Icon])=><button key={name} aria-current={tab===name?'page':undefined} className={tab===name?'active':''} onClick={()=>navigate(name)}><Icon size={21}/><span>{label}</span></button>):NAV.map(([name,Icon])=><button key={name} aria-current={tab===name?'page':undefined} className={tab===name?'active':''} onClick={()=>navigate(name)}><Icon size={21}/><span>{name}</span></button>)}</nav>
   <section id="training-main" className="tf-main">
    {preview&&<div className="tf-notice">Preview mode • changes are not saved. <button onClick={()=>{setPreview(false);setSample(newTrainingState());}}>Exit preview</button></div>}
    {error&&<div role="alert" className="tf-error">{error} <button onClick={()=>void load()}>Reload saved progress</button></div>}
@@ -95,7 +116,7 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
    </>}
    {tab==='Train'&&<><div className="tf-heading"><div><p className="tf-kicker">20 WEEKS · OFF-ICE ONLY</p><h1>Your development path</h1></div></div><section className="tf-path-intro"><h2>{path.name}</h2><p>{path.description}</p><strong>{path.days} days × {path.minutes} minutes each week</strong><p>Keep this commitment throughout the path. Advancing requires skill checks—not finishing weeks. Take rest days between demanding sessions.</p></section><div className="tf-weeks">{WEEKS.map((w,i)=><article key={w.number} className={i===state.week?'current':''}><span className="tf-number">{w.number}</span><div><h3>{w.name}</h3><p>{w.skills.map(id=>SKILLS.find(s=>s.id===id)?.name).join(' · ')}</p></div><span>{i===state.week?'Current':i<state.week?'Covered':'Coming up'}</span></article>)}</div></>}
    {tab==='Progress'&&<><p className="tf-kicker">YOUR WORK. YOUR PROGRESS.</p><h1>Built, not guessed.</h1><section className="tf-progress-summary"><div><strong>{state.sessions.length}</strong><span>Sessions finished</span></div><div><strong>{completed}/{session.blocks.length}</strong><span>Today’s drills</span></div><div><strong>{new Set(skillChecks.filter(c=>c.pathId===state.pathId&&c.passed&&c.skillId).map(c=>c.skillId)).size}/30</strong><span>Skills accomplished</span></div></section><h2>Earn the next path</h2><p>Show all 30 skills with control. Each development group must also be observed on two different days. A parent or coach records exactly what they saw.</p><div className="tf-skills">{GROUPS.map(group=>{const skills=SKILLS.filter(s=>s.group===group);const achieved=new Set(skillChecks.filter(c=>c.group===group&&c.pathId===state.pathId&&c.passed).map(c=>c.skillId));const days=new Set(skillChecks.filter(c=>c.group===group&&c.pathId===state.pathId&&c.passed).map(c=>c.date.slice(0,10))).size;return <article key={group}><div><h3>{group}</h3><span>{achieved.size}/{skills.length} skills</span></div><Progress value={achieved.size/skills.length*100} aria-label={`${group} skill accomplishments`}/><p>{Math.min(days,2)}/2 observed days · {RUBRICS[group]}</p></article>;})}</div><h2>Session history</h2>{state.sessions.length?state.sessions.slice().reverse().map((s:{id:string;date:string;week:number;day:number})=><div key={s.id} className="tf-history"><Check size={18}/><span>Week {s.week+1}, session {s.day+1}</span><time>{new Date(s.date).toLocaleDateString()}</time></div>):<p>Your first completed session will appear here. There are no sample scores.</p>}</>}
-   {tab==='Profile'&&<ProfilePanel key={preview?'preview':profile?.id} profile={profile} preview={preview} profiles={profiles} active={active} onSwitch={setActive} state={state} busy={busy} act={act} reload={load} onError={setError} signOutLink={signOutLink}/>} 
+   {tab==='Profile'&&(playerMode?<PlayerProfilePanel profile={profile} state={state} onParent={async()=>{setPlayer(null);setShowFirstValue(false);await loadAdult();}}/>:<ProfilePanel key={preview?'preview':profile?.id} profile={profile} preview={preview} profiles={profiles} active={active} onSwitch={setActive} state={state} busy={busy} act={act} reload={loadAdult} onError={setError} signOutLink={signOutLink}/>)}
   </section></div>
   <footer className="tf-footer">SCS Saints Goalie Forge · At-home, off-ice development · Adult managed</footer>
   <Dialog open={Boolean(drill)} onOpenChange={open=>{if(!open)navigate(tab,null,true);}}><DialogContent ref={dialogRef} tabIndex={-1} onOpenAutoFocus={e=>{e.preventDefault();dialogRef.current?.focus();}} className="tf-dialog">{drill&&<DrillDetail key={`${session.id}:${drill.id}`} drill={drill} state={state} session={session} busy={busy} readOnly={coach} act={act} saveError={error} onReload={()=>void load()} onDone={()=>{celebrate(drill.name);navigate(tab,null,true);}}/>}</DialogContent></Dialog>
@@ -127,16 +148,18 @@ function DrillDetail({drill,state,session,busy,readOnly,act,onDone,saveError,onR
  </div></>;
 }
 function EmptyAccount({onCreated,signOutLink}:{onCreated:(id:string)=>Promise<void>;signOutLink:ReactNode}) {
- const [intent,setIntent]=useState<'parent'|'coach'|null>(null);
- if(intent==='parent')return <><button className="tf-link" onClick={()=>setIntent(null)}>Back to account choices</button><Setup onCreated={onCreated}/><div className="tf-access-account-actions">{signOutLink}</div></>;
- if(intent==='coach')return <section className="tf-access-choice"><h2>No goalies are shared with you yet</h2><p>Ask a parent or guardian to add the email used for this adult account. The Site owner must also give you access to this private Site.</p><div className="tf-actions"><button className="tf-secondary" onClick={()=>setIntent(null)}>Back</button>{signOutLink}</div></section>;
- return <section className="tf-access-choice" aria-labelledby="account-choice"><h2 id="account-choice">How will you use Goalie Forge?</h2><p>One adult account can manage family profiles and also receive coach access.</p><div className="tf-actions"><button className="tf-primary" onClick={()=>setIntent('parent')}>I’m a parent or guardian</button><button className="tf-secondary" onClick={()=>setIntent('coach')}>I’m a coach</button></div><div className="tf-access-account-actions">{signOutLink}</div></section>;
+ const [coach,setCoach]=useState(false);
+ if(coach)return <section className="tf-access-choice"><h2>No goalies are shared with you yet</h2><p>Ask a parent or guardian to add the email used for this adult account. The Site owner must also give you access to this private Site.</p><div className="tf-actions"><button className="tf-secondary" onClick={()=>setCoach(false)}>Back</button>{signOutLink}</div></section>;
+ return <OnboardingFlow signOutLink={signOutLink} onCoach={()=>setCoach(true)} onHandoff={onCreated}/>;
 }
 function Setup({onCreated}:{onCreated:(id:string)=>Promise<void>}){
  const [busy,setBusy]=useState(false);const [error,setError]=useState('');
  return <form className="tf-form" onSubmit={async e=>{e.preventDefault();setBusy(true);const form=new FormData(e.currentTarget);try{const result=await request({type:'create',nickname:form.get('nickname'),team:form.get('team'),ageBand:form.get('ageBand'),adultConfirmed:form.get('adult')==='on'});await onCreated(result.id);}catch(e){setError(e instanceof Error?e.message:'Could not create profile');}finally{setBusy(false);}}}>
   <h2>Adult setup</h2><label>Player nickname<input required maxLength={24} name="nickname" autoComplete="off" placeholder="First name or nickname"/></label><label>Saints team<input required maxLength={60} name="team" placeholder="Your team name"/></label><label>Age band<select name="ageBand"><option>10–12</option><option>13–15</option></select></label><label className="tf-checkbox"><input required type="checkbox" name="adult"/>I am the parent or guardian managing this player’s training profile.</label><p className="tf-fine">Stores nickname, team, age band, and training records. No exact birth date, photos, public profiles, rankings, or direct messages. Account access is controlled through the private Site.</p>{error&&<p role="alert">{error}</p>}<button className="tf-primary" disabled={busy}>{busy?'Creating…':'Create training profile'}</button>
  </form>;
+}
+function PlayerProfilePanel({profile,state,onParent}:{profile:Profile|undefined;state:TrainingState;onParent:()=>Promise<void>}){
+ return <><p className="tf-kicker">MY GOALIE PROFILE</p><h1>{profile?.nickname||'Goalie'}</h1><p>{profile?.ageBand} · {PATHS.find(path=>path.id===state.pathId)?.name}</p><section className="tf-profile-card"><Shield/><h2>Private by default</h2><p>Your progress belongs to you and your family. Tendie Forge has no public rankings, direct messages, or public profile.</p></section><button className="tf-secondary" onClick={()=>void onParent()}><Lock size={17}/>Parent area</button></>;
 }
 function ProfilePanel({profile,preview,profiles,active,onSwitch,state,busy,act,reload,onError,signOutLink}:{profile:Profile|undefined;preview:boolean;profiles:Profile[];active:string;onSwitch:(s:string)=>void;state:TrainingState;busy:boolean;act:(a:Action)=>Promise<boolean>;reload:()=>Promise<void>;onError:(s:string)=>void;signOutLink:ReactNode}) {
  const [showAdult,setShowAdult]=useState(profile?.role==='coach');const [adding,setAdding]=useState(false);const [confirm,setConfirm]=useState(false);const [email,setEmail]=useState('');const [skillId,setSkillId]=useState(1);const [note,setNote]=useState('');const [pending,setPending]=useState(false);

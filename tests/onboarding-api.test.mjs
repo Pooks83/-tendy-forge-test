@@ -15,7 +15,7 @@ async function setup(){
 }
 
 const input={
- nickname:'Test goalie',ageBand:'8–10',catches:'left',experience:'developing',equipment:[],
+ nickname:'Test goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:[],
  plannedDays:['monday','thursday'],missionMinutes:25,consentAccepted:true,
  consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',
  optionalPermissions:{analytics:false,notifications:false,clips:false},
@@ -55,7 +55,7 @@ test('onboarding atomically creates profile relationship consent preferences con
    assert.equal(count.n,1,table);
   }
   const profile=await db.prepare('SELECT nickname,team,age_band,catches,experience,equipment_json,planned_days_json,mission_minutes,setup_status FROM training_profiles WHERE id=?').bind(created.data.profileId).first();
-  assert.deepEqual(profile,{nickname:'Test goalie',team:'',age_band:'8–10',catches:'left',experience:'developing',equipment_json:'[]',planned_days_json:'["monday","thursday"]',mission_minutes:25,setup_status:'ready'});
+  assert.deepEqual(profile,{nickname:'Test goalie',team:'',age_band:'10–12',catches:'left',experience:'developing',equipment_json:'[]',planned_days_json:'["monday","thursday"]',mission_minutes:25,setup_status:'ready'});
  }finally{await mf.dispose();}
 });
 
@@ -66,7 +66,7 @@ test('household summary contains setup fields but not training state or consent 
   const result=await call(mf);
   assert.equal(result.status,200);
   assert.equal(result.data.profiles.length,1);
-  assert.deepEqual(result.data.profiles[0],{id:result.data.profiles[0].id,nickname:'Test goalie',ageBand:'8–10',catches:'left',experience:'developing',equipment:[],plannedDays:['monday','thursday'],missionMinutes:25,setupStatus:'ready',active:true});
+  assert.deepEqual(result.data.profiles[0],{id:result.data.profiles[0].id,nickname:'Test goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:[],plannedDays:['monday','thursday'],missionMinutes:25,setupStatus:'ready',active:true});
   assert.equal(JSON.stringify(result.data).includes('state'),false);
   assert.equal(JSON.stringify(result.data).includes('consentVersion'),false);
  }finally{await mf.dispose();}
