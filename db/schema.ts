@@ -1,5 +1,5 @@
 // Adult-owned player profiles and explicitly granted coach access.
-import {sqliteTable,text,integer,index,primaryKey} from 'drizzle-orm/sqlite-core';
+import {sqliteTable,text,integer,index,primaryKey,uniqueIndex} from 'drizzle-orm/sqlite-core';
 export const profiles=sqliteTable('training_profiles',{
  id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),nickname:text('nickname').notNull(),team:text('team').notNull(),ageBand:text('age_band').notNull(),state:text('state').notNull(),revision:integer('revision').notNull().default(0),createdAt:text('created_at').notNull(),
  catches:text('catches'),experience:text('experience'),equipmentJson:text('equipment_json'),plannedDaysJson:text('planned_days_json'),missionMinutes:integer('mission_minutes'),setupStatus:text('setup_status').notNull().default('legacy-review-required'),updatedAt:text('updated_at'),
@@ -43,3 +43,7 @@ export const onboardingDrafts=sqliteTable('onboarding_drafts',{
 export const firstChallengeResults=sqliteTable('first_challenge_results',{
  profileId:text('profile_id').primaryKey().references(()=>profiles.id,{onDelete:'cascade'}),protocolVersion:text('protocol_version').notNull(),status:text('status').notNull(),startedAt:text('started_at').notNull(),completedAt:text('completed_at'),resultJson:text('result_json').notNull().default('{}'),updatedAt:text('updated_at').notNull(),
 });
+
+export const productEvents=sqliteTable('product_events',{
+ id:text('id').primaryKey(),logicalKey:text('logical_key').notNull(),eventName:text('event_name').notNull(),accountContextId:text('account_context_id'),profileContextId:text('profile_context_id').references(()=>profiles.id,{onDelete:'cascade'}),appVersion:text('app_version').notNull(),buildVersion:text('build_version').notNull(),configVersion:text('config_version').notNull(),metadataJson:text('metadata_json').notNull().default('{}'),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('idx_product_events_logical_key').on(t.logicalKey),index('idx_product_events_name_created').on(t.eventName,t.createdAt)]);

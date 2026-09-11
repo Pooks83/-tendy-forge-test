@@ -1,6 +1,7 @@
 import {newTrainingState} from './training.mjs';
 import {buildPlayerProjection,canonicalError,normalizeOnboardingInput} from './identity-contract.mjs';
 import {readStoredOperation,storeOperationStatement} from './idempotency-store';
+import {productEventStatement} from './product-event-store';
 import type {AdultIdentity} from './account-identity';
 
 type HouseholdRow={id:string;nickname:string;age_band:string;catches:string|null;experience:string|null;equipment_json:string|null;planned_days_json:string|null;mission_minutes:number|null;setup_status:string;active:number};
@@ -29,6 +30,10 @@ export async function createGoalieSetup(db:D1Database,identity:AdultIdentity,raw
    db.prepare('INSERT INTO privacy_preferences(profile_id,analytics_allowed,notifications_allowed,clips_allowed,updated_at) VALUES(?,?,?,?,?)').bind(profileId,input.optionalPermissions.analytics?1:0,input.optionalPermissions.notifications?1:0,input.optionalPermissions.clips?1:0,now),
    db.prepare('INSERT INTO active_player_context(account_id,profile_id,updated_at) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET profile_id=excluded.profile_id,updated_at=excluded.updated_at').bind(identity.id,profileId,now),
    db.prepare('INSERT INTO audit_events(id,actor_account_id,profile_id,event_type,metadata_json,created_at) VALUES(?,?,?,?,?,?)').bind(auditId,identity.id,profileId,'PLAYER_PROFILE_CREATED',JSON.stringify({consentVersion:input.consentVersion,policyVersion:input.policyVersion}),now),
+   ...(input.optionalPermissions.analytics?[
+    productEventStatement(db,{eventName:'player_created',logicalKey:`player_created:${profileId}`,accountContextId:identity.id,profileContextId:profileId},now),
+    productEventStatement(db,{eventName:'onboarding_completed',logicalKey:`onboarding_completed:${profileId}`,accountContextId:identity.id,profileContextId:profileId},now),
+   ]:[]),
    storeOperationStatement(db,identity.id,operationKey,'create-goalie',response,now),
    db.prepare('DELETE FROM onboarding_drafts WHERE account_id=?').bind(identity.id),
   ]);

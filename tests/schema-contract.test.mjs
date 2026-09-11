@@ -19,6 +19,16 @@ test('identity migration creates every canonical TF-MVP-003 table',()=>{
  for(const name of ['active_player_context','audit_events','consent_records','deletion_requests','first_challenge_results','guardian_player','idempotency_records','onboarding_drafts','privacy_preferences'])assert.ok(tables.includes(name),`${name} missing`);
 });
 
+test('product event ledger has versioned pseudonymous context and a unique logical event key',()=>{
+ const db=migratedDatabase();
+ const tables=db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name").all().map(row=>row.name);
+ assert.ok(tables.includes('product_events'),'product_events missing');
+ const columns=db.prepare("PRAGMA table_info('product_events')").all().map(row=>row.name);
+ assert.deepEqual(columns,['id','logical_key','event_name','account_context_id','profile_context_id','app_version','build_version','config_version','metadata_json','created_at']);
+ const indexes=db.prepare("PRAGMA index_list('product_events')").all();
+ assert.ok(indexes.some(index=>index.unique===1),'logical event key must be unique');
+});
+
 test('onboarding drafts are account scoped and contain consent recovery metadata',()=>{
  const db=migratedDatabase();
  const columns=db.prepare("PRAGMA table_info('onboarding_drafts')").all().map(row=>row.name);

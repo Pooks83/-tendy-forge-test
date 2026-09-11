@@ -67,6 +67,37 @@ test('onboarding atomically creates profile relationship consent preferences con
  }finally{await mf.dispose();}
 });
 
+test('consented onboarding emits player_created and onboarding_completed exactly once without child PII',async()=>{
+ const {mf,db}=await setup();
+ try{
+  const allowed={...input,nickname:'Private Nickname',optionalPermissions:{...input.optionalPermissions,analytics:true}};
+  const created=await call(mf,{method:'POST',body:allowed,key:'analytics-create-1'});
+  assert.equal(created.status,201);
+  await call(mf,{method:'POST',body:allowed,key:'analytics-create-1'});
+  const events=await db.prepare('SELECT logical_key,event_name,account_context_id,profile_context_id,app_version,build_version,config_version,metadata_json FROM product_events ORDER BY event_name').all();
+  assert.equal(events.results.length,2);
+  assert.deepEqual(events.results.map(event=>event.event_name),['onboarding_completed','player_created']);
+  for(const event of events.results){
+   assert.equal(event.account_context_id,'parent');
+   assert.equal(event.profile_context_id,created.data.profileId);
+   assert.ok(event.app_version);
+   assert.ok(event.build_version);
+   assert.equal(event.config_version,'tf-v1.4');
+   assert.equal(JSON.stringify(event).includes('Private Nickname'),false);
+   assert.equal(JSON.stringify(event).includes('parent@example.test'),false);
+  }
+ }finally{await mf.dispose();}
+});
+
+test('declining optional analytics creates no product events',async()=>{
+ const {mf,db}=await setup();
+ try{
+  const created=await call(mf,{method:'POST',body:input,key:'analytics-declined-1'});
+  assert.equal(created.status,201);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM product_events').first()).n,0);
+ }finally{await mf.dispose();}
+});
+
 test('household summary contains setup fields but not training state or consent detail',async()=>{
  const {mf}=await setup();
  try{
