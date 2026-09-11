@@ -47,3 +47,7 @@ export const firstChallengeResults=sqliteTable('first_challenge_results',{
 export const productEvents=sqliteTable('product_events',{
  id:text('id').primaryKey(),logicalKey:text('logical_key').notNull(),eventName:text('event_name').notNull(),accountContextId:text('account_context_id'),profileContextId:text('profile_context_id').references(()=>profiles.id,{onDelete:'cascade'}),appVersion:text('app_version').notNull(),buildVersion:text('build_version').notNull(),configVersion:text('config_version').notNull(),metadataJson:text('metadata_json').notNull().default('{}'),createdAt:text('created_at').notNull(),
 },t=>[uniqueIndex('idx_product_events_logical_key').on(t.logicalKey),index('idx_product_events_name_created').on(t.eventName,t.createdAt)]);
+
+export const missionInstances=sqliteTable('mission_instances',{
+ id:text('id').primaryKey(),profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),missionKey:text('mission_key').notNull(),status:text('status').notNull(),startedAt:text('started_at').notNull(),completedAt:text('completed_at'),updatedAt:text('updated_at').notNull(),
+},t=>[uniqueIndex('idx_mission_instances_profile_key').on(t.profileId,t.missionKey),index('idx_mission_instances_profile_status').on(t.profileId,t.status)]);

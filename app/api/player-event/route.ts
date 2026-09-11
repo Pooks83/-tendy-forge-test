@@ -7,7 +7,7 @@ import {buildSession} from '@/lib/training.mjs';
 import {trainingDb} from '@/lib/training-store';
 
 export const dynamic='force-dynamic';
-const EVENTS=new Set(['today_viewed','mission_started']);
+const EVENTS=new Set(['today_viewed']);
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const failure=(error:unknown)=>{
  if(error&&typeof error==='object'&&'code' in error&&'status' in error){const value=error as {code:string;message:string;status:number};return reply({error:{code:value.code,message:value.message}},value.status);}

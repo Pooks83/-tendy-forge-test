@@ -29,6 +29,14 @@ test('product event ledger has versioned pseudonymous context and a unique logic
  assert.ok(indexes.some(index=>index.unique===1),'logical event key must be unique');
 });
 
+test('mission instances preserve authoritative start state independently from analytics',()=>{
+ const db=migratedDatabase();
+ const columns=db.prepare("PRAGMA table_info('mission_instances')").all().map(row=>row.name);
+ assert.deepEqual(columns,['id','profile_id','mission_key','status','started_at','completed_at','updated_at']);
+ const indexes=db.prepare("PRAGMA index_list('mission_instances')").all();
+ assert.ok(indexes.some(index=>index.unique===1),'profile mission key must be unique');
+});
+
 test('onboarding drafts are account scoped and contain consent recovery metadata',()=>{
  const db=migratedDatabase();
  const columns=db.prepare("PRAGMA table_info('onboarding_drafts')").all().map(row=>row.name);

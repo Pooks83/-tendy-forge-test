@@ -25,7 +25,7 @@ const call=async(mf,eventName,key='event-operation-1')=>{
  return {status:response.status,data:await response.json()};
 };
 
-test('Today and mission-start events are once-only per authoritative mission',async()=>{
+test('Today events are once-only per authoritative mission',async()=>{
  const {mf,db}=await setup(true);
  try{
   const viewed=await call(mf,'today_viewed','today-operation-1');
@@ -34,11 +34,9 @@ test('Today and mission-start events are once-only per authoritative mission',as
   const retried=await call(mf,'today_viewed','today-operation-2');
   assert.equal(retried.status,200);
   assert.deepEqual(retried.data,viewed.data);
-  const started=await call(mf,'mission_started','mission-operation-1');
-  assert.equal(started.status,201);
   const events=await db.prepare('SELECT event_name,logical_key,metadata_json FROM product_events ORDER BY event_name').all();
-  assert.equal(events.results.length,2);
-  assert.deepEqual(events.results.map(event=>event.event_name),['mission_started','today_viewed']);
+  assert.equal(events.results.length,1);
+  assert.deepEqual(events.results.map(event=>event.event_name),['today_viewed']);
   assert.equal(JSON.stringify(events.results).includes('Private Nickname'),false);
   assert.equal(JSON.stringify(events.results).includes('adult@example.test'),false);
  }finally{await mf.dispose();}
@@ -59,6 +57,8 @@ test('player event endpoint rejects unknown events and revoked relationships',as
  try{
   const unknown=await call(mf,'nickname_changed','unknown-event-1');
   assert.equal(unknown.status,400);
+  const derived=await call(mf,'mission_started','derived-event-1');
+  assert.equal(derived.status,400);
   await db.prepare("UPDATE guardian_player SET status='revoked' WHERE account_id='adult' AND profile_id='p1'").run();
   const revoked=await call(mf,'today_viewed','revoked-event-1');
   assert.equal(revoked.status,403);

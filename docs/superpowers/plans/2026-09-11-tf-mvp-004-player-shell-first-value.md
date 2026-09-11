@@ -71,6 +71,10 @@ The player shell has exactly four destinations—Today, Journey, Progress, Profi
 ### Task 4: Complete GJ-01 interruption, retry, safety, and first-mission handoff
 
 **Files:**
+- Modify: `db/schema.ts`
+- Create: `drizzle/0005_*.sql`
+- Create: `lib/mission-store.ts`
+- Create: `app/api/mission/route.ts`
 - Modify: `components/tendie-forge/player-first-value.tsx`
 - Modify: `components/goalie-forge/training-app.tsx`
 - Modify: `lib/access-loader.mjs`
@@ -83,10 +87,11 @@ The player shell has exactly four destinations—Today, Journey, Progress, Profi
 1. Add a failing end-to-end contract test from completed onboarding through handoff, challenge start, exact 60-second completion, first Today state, and first mission start.
 2. Add branches for reload before start, reload while active, retry after ambiguous start/complete response, completed challenge reload, safety stop, adult return, expired/revoked relationship, and recoverable load failure.
 3. Implement a pure Today resolver for the GJ-01 states used in this package. Do not implement TF-MVP-005 offline semantics; show an honest recoverable network state instead.
-4. Ensure challenge start/finish controls cannot double-submit and all server errors produce a defined retry or adult exit.
-5. Make first mission handoff land on Today with the mission as the sole dominant action, then enter the existing first activity without duplicating `mission_started`.
-6. Run focused GJ-01 and component tests.
-7. Commit the task.
+4. Persist the first mission's `in-progress` state in a narrow `MissionInstance` foundation independent of analytics consent; TF-MVP-005 extends this state machine rather than replacing it.
+5. Ensure challenge start/finish controls cannot double-submit and all server errors produce a defined retry or adult exit.
+6. Make first mission handoff land on Today with the mission as the sole dominant action, then enter the existing first activity without duplicating `mission_started`.
+7. Run focused GJ-01 and component tests.
+8. Commit the task.
 
 ### Task 5: Package verification and evidence
 

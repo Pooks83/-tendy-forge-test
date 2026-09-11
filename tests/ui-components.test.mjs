@@ -95,6 +95,9 @@ test('child first value defines the four canonical screens without rank or tutor
   assert.match(today,/START MISSION/);
   assert.doesNotMatch(today,/Main navigation/);
   assert.match(render('safety-stopped'),/GO TO PARENT AREA/);
+  const resume=renderToStaticMarkup(React.createElement(PlayerFirstValueFlow,{player,initialStep:'first-today',initialMissionStarted:true,onStartMission:async()=>true,onStop:async()=>true,onParent:async()=>{}}));
+  assert.match(resume,/RESUME MISSION/);
+  assert.doesNotMatch(resume,/START MISSION/);
 });
 test('training save feedback exposes the error and reload action, and stays absent without an error',async()=>{
  const {TrainingSaveError}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');

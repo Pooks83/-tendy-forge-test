@@ -41,6 +41,10 @@ test('reload resumes an active challenge and sends completed players to Today',(
  assert.equal(active.remaining,17);
  const complete=flow.firstValueReducer(initial,{type:'HYDRATE',status:'completed'});
  assert.equal(complete.step,'first-today');
+ assert.equal(complete.missionStarted,false);
+ const resumed=flow.firstValueReducer(initial,{type:'HYDRATE',status:'completed',missionStatus:'in-progress'});
+ assert.equal(resumed.step,'first-today');
+ assert.equal(resumed.missionStarted,true);
 });
 
 test('safety stop exits the active challenge into an adult recovery path',()=>{
@@ -71,4 +75,11 @@ test('server projection is authoritative for every first-value status',()=>{
 test('server projection rejects corrupt or unknown persisted state',()=>{
  assert.throws(()=>flow.resolveFirstValueStatus({status:'mystery',protocol_version:'tf-first-ready-v1',started_at:'2026-09-11T12:00:00.000Z'},false,new Date()),/Invalid first challenge status/);
  assert.throws(()=>flow.resolveFirstValueStatus({status:'active',protocol_version:'tf-first-ready-v1',started_at:'not-a-date'},false,new Date()),/Invalid first challenge start time/);
+});
+
+test('Today resolver exposes exactly one next action for first-value states',()=>{
+ assert.deepEqual(flow.resolveFirstTodayState({safetyStopped:true}),{state:'blocked-adult',action:'adult-review'});
+ assert.deepEqual(flow.resolveFirstTodayState({challengeStatus:'completed',missionStatus:'not-started'}),{state:'mission-ready',action:'start-mission'});
+ assert.deepEqual(flow.resolveFirstTodayState({challengeStatus:'completed',missionStatus:'in-progress'}),{state:'active-resume',action:'resume-mission'});
+ assert.deepEqual(flow.resolveFirstTodayState({challengeStatus:'active'}),{state:'first-challenge',action:'resume-challenge'});
 });
