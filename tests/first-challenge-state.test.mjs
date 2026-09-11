@@ -48,3 +48,27 @@ test('safety stop exits the active challenge into an adult recovery path',()=>{
  const stopped=flow.firstValueReducer(initial,{type:'SAFETY_STOPPED'});
  assert.equal(stopped.step,'safety-stopped');
 });
+
+test('server projection is authoritative for every first-value status',()=>{
+ const now=new Date('2026-09-11T12:01:00.000Z');
+ assert.deepEqual(flow.resolveFirstValueStatus(null,false,now),{
+  status:'not-started',protocolVersion:'tf-first-ready-v1',
+ });
+ assert.deepEqual(flow.resolveFirstValueStatus({status:'active',protocol_version:'tf-first-ready-v1',started_at:'2026-09-11T12:00:43.000Z'},false,now),{
+  status:'active',protocolVersion:'tf-first-ready-v1',remainingSeconds:43,canComplete:false,
+ });
+ assert.deepEqual(flow.resolveFirstValueStatus({status:'active',protocol_version:'tf-first-ready-v1',started_at:'2026-09-11T11:59:59.000Z'},false,now),{
+  status:'active',protocolVersion:'tf-first-ready-v1',remainingSeconds:0,canComplete:true,
+ });
+ assert.deepEqual(flow.resolveFirstValueStatus({status:'completed',protocol_version:'tf-first-ready-v1',started_at:'2026-09-11T11:59:00.000Z',result_json:'{"completedSeconds":60,"claim":"completed"}'},false,now),{
+  status:'completed',protocolVersion:'tf-first-ready-v1',result:{completedSeconds:60,claim:'completed'},
+ });
+ assert.deepEqual(flow.resolveFirstValueStatus({status:'active',protocol_version:'tf-first-ready-v1',started_at:'2026-09-11T12:00:43.000Z'},true,now),{
+  status:'safety-stopped',protocolVersion:'tf-first-ready-v1',recovery:'adult-required',
+ });
+});
+
+test('server projection rejects corrupt or unknown persisted state',()=>{
+ assert.throws(()=>flow.resolveFirstValueStatus({status:'mystery',protocol_version:'tf-first-ready-v1',started_at:'2026-09-11T12:00:00.000Z'},false,new Date()),/Invalid first challenge status/);
+ assert.throws(()=>flow.resolveFirstValueStatus({status:'active',protocol_version:'tf-first-ready-v1',started_at:'not-a-date'},false,new Date()),/Invalid first challenge start time/);
+});

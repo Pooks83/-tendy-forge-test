@@ -73,5 +73,22 @@ test('safety stop prevents first-challenge completion',async()=>{
   const stopped=await call(mf,'complete','safety-complete-key');
   assert.equal(stopped.status,409);
   assert.equal(stopped.data.error.code,'SAFETY_STOPPED');
+  const projected=await call(mf);
+  assert.equal(projected.status,200);
+  assert.deepEqual(projected.data,{status:'safety-stopped',protocolVersion:'tf-first-ready-v1',recovery:'adult-required'});
+ }finally{await mf.dispose();}
+});
+
+test('elapsed active challenge is finishable but never completed by a read',async()=>{
+ const {mf,db}=await setup();
+ try{
+  await call(mf,'start','elapsed-start-key');
+  await db.prepare("UPDATE first_challenge_results SET started_at=datetime('now','-61 seconds') WHERE profile_id='p1'").run();
+  const elapsed=await call(mf);
+  assert.equal(elapsed.status,200);
+  assert.equal(elapsed.data.status,'active');
+  assert.equal(elapsed.data.remainingSeconds,0);
+  assert.equal(elapsed.data.canComplete,true);
+  assert.equal((await db.prepare("SELECT status FROM first_challenge_results WHERE profile_id='p1'").first()).status,'active');
  }finally{await mf.dispose();}
 });

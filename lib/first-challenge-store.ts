@@ -1,21 +1,14 @@
 import type {AdultIdentity} from './account-identity';
 import {canonicalError} from './identity-contract.mjs';
-import {FIRST_CHALLENGE_PROTOCOL} from './first-challenge-state.mjs';
+import {FIRST_CHALLENGE_PROTOCOL,resolveFirstValueStatus} from './first-challenge-state.mjs';
 import {getActivePlayer} from './household-store';
 import {readStoredOperation,storeOperationStatement} from './idempotency-store';
 
 type ChallengeRow={protocol_version:string;status:string;started_at:string;completed_at:string|null;result_json:string};
 
-const responseFor=(row:ChallengeRow,now=new Date())=>({
- status:row.status,
- protocolVersion:row.protocol_version,
- ...(row.status==='active'?{remainingSeconds:Math.max(0,60-Math.floor((now.getTime()-new Date(row.started_at).getTime())/1000))}:{}),
- ...(row.status==='completed'?{result:JSON.parse(row.result_json)}:{}),
-});
-
 async function context(db:D1Database,identity:AdultIdentity){
- const player=await getActivePlayer(db,identity) as unknown as {profile:{id:string}};
- return player.profile.id;
+ const player=await getActivePlayer(db,identity) as unknown as {profile:{id:string};training:{safetyStopped?:boolean}};
+ return {profileId:player.profile.id,safetyStopped:player.training.safetyStopped===true};
 }
 
 async function rowFor(db:D1Database,profileId:string){
@@ -23,20 +16,21 @@ async function rowFor(db:D1Database,profileId:string){
 }
 
 export async function getFirstChallenge(db:D1Database,identity:AdultIdentity){
- const profileId=await context(db,identity);
+ const {profileId,safetyStopped}=await context(db,identity);
  const row=await rowFor(db,profileId);
- return row?responseFor(row):{status:'not-started',protocolVersion:FIRST_CHALLENGE_PROTOCOL};
+ return resolveFirstValueStatus(row,safetyStopped);
 }
 
 export async function startFirstChallenge(db:D1Database,identity:AdultIdentity,operationKey:string,now=new Date()){
- const profileId=await context(db,identity);
+ const {profileId,safetyStopped}=await context(db,identity);
+ if(safetyStopped)throw canonicalError('SAFETY_STOPPED','Training is paused. Ask a parent or guardian to check in before continuing.',409);
  const operation=`first-challenge-start:${profileId}`;
  const stored=await readStoredOperation(db,identity.id,operationKey,operation);
  if(stored)return {data:stored,replayed:true};
  const existing=await rowFor(db,profileId);
- if(existing)return {data:responseFor(existing),replayed:true};
+ if(existing)return {data:resolveFirstValueStatus(existing,false,now),replayed:true};
  const timestamp=now.toISOString();
- const data={status:'active',protocolVersion:FIRST_CHALLENGE_PROTOCOL,remainingSeconds:60};
+ const data={status:'active',protocolVersion:FIRST_CHALLENGE_PROTOCOL,remainingSeconds:60,canComplete:false};
  try{
   await db.batch([
    db.prepare('INSERT INTO first_challenge_results(profile_id,protocol_version,status,started_at,result_json,updated_at) VALUES(?,?,?,?,?,?)').bind(profileId,FIRST_CHALLENGE_PROTOCOL,'active',timestamp,'{}',timestamp),
@@ -46,21 +40,20 @@ export async function startFirstChallenge(db:D1Database,identity:AdultIdentity,o
   return {data,replayed:false};
  }catch(error){
   const current=await rowFor(db,profileId);
-  if(current)return {data:responseFor(current),replayed:true};
+  if(current)return {data:resolveFirstValueStatus(current,false,now),replayed:true};
   throw error;
  }
 }
 
 export async function completeFirstChallenge(db:D1Database,identity:AdultIdentity,operationKey:string,now=new Date()){
- const profileId=await context(db,identity);
+ const {profileId,safetyStopped}=await context(db,identity);
  const operation=`first-challenge-complete:${profileId}`;
  const stored=await readStoredOperation(db,identity.id,operationKey,operation);
  if(stored)return {data:stored,replayed:true};
  const existing=await rowFor(db,profileId);
  if(!existing)throw canonicalError('CHALLENGE_NOT_STARTED','Start the challenge first.',409);
- if(existing.status==='completed')return {data:responseFor(existing),replayed:true};
- const profile=await db.prepare('SELECT state FROM training_profiles WHERE id=?').bind(profileId).first<{state:string}>();
- if(profile&&JSON.parse(profile.state).safetyStopped===true)throw canonicalError('SAFETY_STOPPED','Training is paused. Ask a parent or guardian to check in before continuing.',409);
+ if(existing.status==='completed')return {data:resolveFirstValueStatus(existing,false,now),replayed:true};
+ if(safetyStopped)throw canonicalError('SAFETY_STOPPED','Training is paused. Ask a parent or guardian to check in before continuing.',409);
  if(now.getTime()-new Date(existing.started_at).getTime()<60_000)throw canonicalError('CHALLENGE_IN_PROGRESS','Keep going until the 60-second timer finishes.',409);
  const timestamp=now.toISOString();
  const result={completedSeconds:60,claim:'completed'};
@@ -74,7 +67,7 @@ export async function completeFirstChallenge(db:D1Database,identity:AdultIdentit
   return {data,replayed:false};
  }catch(error){
   const current=await rowFor(db,profileId);
-  if(current?.status==='completed')return {data:responseFor(current),replayed:true};
+  if(current?.status==='completed')return {data:resolveFirstValueStatus(current,false,now),replayed:true};
   throw error;
  }
 }
