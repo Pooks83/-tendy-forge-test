@@ -11,6 +11,7 @@ import {parseTrainingLocation,trainingLocation,resolveTrainingDrill} from '@/lib
 import {readTrainingResponse} from '@/lib/training-request.mjs';
 import {activeAdultProfileId,buildPlayerViewState,loadInitialAccess} from '@/lib/access-loader.mjs';
 import {completeContextSwitch,contextSwitchOperationKey} from '@/lib/context-switch.mjs';
+import {resolveTodayMissionAction} from '@/lib/today-state.mjs';
 import {DrillMap} from './drill-map';
 import {OnboardingFlow} from '@/components/tendie-forge/onboarding-flow';
 import {PlayerFirstValueFlow} from '@/components/tendie-forge/player-first-value';
@@ -34,9 +35,9 @@ async function setPlayerContext(profileId:string,operationKey:string){
  const response=await fetch('/api/player-context',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':operationKey},body:JSON.stringify({profileId})});
  return await readTrainingResponse(response) as PlayerProjection;
 }
-async function startPlayerMission(operationKey:string){
+async function startPlayerMission(operationKey:string):Promise<{missionId:string;status:string}>{
  const response=await fetch('/api/mission',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':operationKey},body:JSON.stringify({action:'start'})});
- return await readTrainingResponse(response);
+ return await readTrainingResponse(response) as {missionId:string;status:string};
 }
 async function fetchTrainingProfiles():Promise<{mode:'guest'|'signed-in';profiles:Profile[]}> {
  const response=await fetch('/api/training',{cache:'no-store'});
@@ -70,6 +71,7 @@ export function AccessShell({mode,error,signInLink,signOutLink,onPreview,onReloa
 export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signOutLink:ReactNode}){
  const [tab,setTab]=useState('Home');const [profiles,setProfiles]=useState<Profile[]>([]);const [active,setActive]=useState('');
  const [player,setPlayer]=useState<PlayerProjection|null>(null);const [showFirstValue,setShowFirstValue]=useState(false);const [resumeFirstValue,setResumeFirstValue]=useState(false);
+ const [activeMissionId,setActiveMissionId]=useState<string|null>(null);
  const [mode,setMode]=useState<'loading'|'signed-in'|'guest'|'error'>('loading');const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const [preview,setPreview]=useState(false);const [sample,setSample]=useState(newTrainingState);const [selected,setSelected]=useState<string|null>(null);
  const [celebration,setCelebration]=useState('');const busyRef=useRef(false);const dialogRef=useRef<HTMLDivElement>(null);const contextKeysRef=useRef(new Map<string,string>());
@@ -79,6 +81,7 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
  const path=PATHS.find(p=>p.id===state.pathId)!;const session=useMemo(()=>buildSession(state.pathId,state.week,state.day,state.cycle||0),[state.pathId,state.week,state.day,state.cycle]);
  const sessionDrillIds=useMemo(()=>session.blocks.map(item=>item.id),[session]);
  const completed=session.blocks.filter(d=>isDrillDone(state,session,d)).length;
+ const todayAction=resolveTodayMissionAction({missionInProgress:activeMissionId===session.id,completedActivities:completed});
  const sessionDone=state.sessions.some((s:{id:string})=>s.id===session.id);
  const playerMode=Boolean(player);const enabled=preview||Boolean(profile);const drillId=resolveTrainingDrill(enabled&&!showFirstValue,selected,sessionDrillIds);
  const drill=session.blocks.find(d=>d.id===drillId);const coach=profile?.role==='coach'&&!preview;
@@ -106,7 +109,7 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
  useEffect(()=>{if(!celebration)return;const timer=setTimeout(()=>setCelebration(''),2800);return()=>clearTimeout(timer);},[celebration]);
  if(adultProfile?.role==='owner'&&adultProfile.setupStatus==='legacy-review-required')return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><p className="tf-kicker">SETUP REVIEW</p><h1>Keep the progress. Complete the missing setup.</h1><p>Your saved sessions and coach access stay attached to the same goalie profile.</p><OnboardingFlow initialStep="parent-permission" legacyProfile={adultProfile} signOutLink={signOutLink} onHandoff={async()=>{const projected=await loadPlayer();if(projected){setResumeFirstValue(false);setShowFirstValue(true);}}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
  if(!enabled)return <AccessShell mode={mode} error={error} signInLink={signInLink} signOutLink={signOutLink} onPreview={()=>setPreview(true)} onReload={()=>void loadAdult()} onCreated={async()=>{const projected=await loadPlayer();if(projected){setResumeFirstValue(false);setShowFirstValue(true);}}}/>;
- if(player&&showFirstValue)return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><PlayerFirstValueFlow player={player} resume={resumeFirstValue} onStartMission={async(operationKey,alreadyStarted)=>{if(!alreadyStarted)await startPlayerMission(operationKey);setShowFirstValue(false);navigate('Today',session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool');}} onStop={()=>act({type:'stop'})} onParent={async()=>{await loadAdult();setPlayer(null);setShowFirstValue(false);}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
+ if(player&&showFirstValue)return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><PlayerFirstValueFlow player={player} resume={resumeFirstValue} onStartMission={async(operationKey,alreadyStarted)=>{const missionId=alreadyStarted?session.id:(await startPlayerMission(operationKey)).missionId;setActiveMissionId(missionId);setShowFirstValue(false);navigate('Today',session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool');}} onStop={()=>act({type:'stop'})} onParent={async()=>{await loadAdult();setPlayer(null);setActiveMissionId(null);setShowFirstValue(false);}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
  return <main className="tf-app">
   <a className="tf-skip" href="#training-main">Skip to training</a>
   <header className="tf-header"><Brand onHome={()=>navigate(playerMode?'Today':'Home')}/><div className="tf-header-end"><span className="tf-office">At home · Off ice</span>{profile&&!playerMode&&<span className="tf-adult-label">{coach?'Coach view':'Adult managed'}</span>}<button className="tf-avatar" onClick={()=>navigate('Profile')} aria-label={playerMode?'Open goalie profile':coach?'Open coach workspace':'Open profile and adult tools'}>{profile?.nickname?.slice(0,1)||'G'}</button></div></header>
@@ -117,7 +120,7 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
    {(tab==='Home'||tab==='Today')&&<>
     <div className="tf-heading"><div><p className="tf-kicker">{profile?.nickname||'GOALIE'} · {path.name}</p><h1>{sessionDone?'That is a session earned.':'Your next save starts here.'}</h1></div><span className="tf-level">Path {path.level}</span></div>
     {state.safetyStopped?<div className="tf-error"><AlertTriangle/><h2>Training is paused.</h2><p>Tell a parent or guardian what happened. Rest does not erase your progress.</p><button className="tf-secondary" onClick={()=>setTab('Profile')}>Adult review</button></div>:<section className="tf-today"><div className="tf-today-top"><p className="tf-kicker">WEEK {state.week+1} · SESSION {state.day+1}</p><span><Clock size={16}/>{path.minutes} min planned</span></div><h2>{session.title}</h2><p className="tf-session-intro">{sessionDone?'Put the equipment away. Recovery is part of getting better.':`${session.blocks.length-completed} of ${session.blocks.length} drills left. One clear task at a time.`}</p><Progress value={completed/session.blocks.length*100} aria-label="Drills complete"/>
-     <div className="tf-start-row">{!sessionDone?<button disabled={busy||coach} className="tf-primary" onClick={()=>navigate(playerMode?'Today':'Home',session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool')}><Play size={19} fill="currentColor"/>{completed?'Continue training':'Start today’s training'}</button>:<button className="tf-primary" disabled={busy||coach} onClick={()=>void act({type:'next'})}>{state.week===19&&state.day===path.days-1?'Start another practice cycle':'View next planned session'} <ArrowRight size={18}/></button>}<span>{path.days} days/week · {path.schedule.join(' / ')}</span></div>
+     <div className="tf-start-row">{!sessionDone?<button disabled={busy||coach} className="tf-primary" onClick={()=>navigate(playerMode?'Today':'Home',session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool')}><Play size={19} fill="currentColor"/>{todayAction.label}</button>:<button className="tf-primary" disabled={busy||coach} onClick={()=>void act({type:'next'})}>{state.week===19&&state.day===path.days-1?'Start another practice cycle':'View next planned session'} <ArrowRight size={18}/></button>}<span>{path.days} days/week · {path.schedule.join(' / ')}</span></div>
     </section>}
     <section className="tf-day-list" aria-label="Today’s drills">{session.blocks.map((d,i)=><button key={d.id} onClick={()=>navigate(playerMode?'Today':'Home',d.id)} className="tf-drill-row"><span className={isDrillDone(state,session,d)?'tf-number done':'tf-number'}>{isDrillDone(state,session,d)?<Check size={19}/>:i+1}</span><span><strong>{d.name}</strong><small>{d.sets} {d.sets===1?'set':'sets'} · {d.target} · {d.minutes} min</small></span><ChevronRight size={19}/></button>)}</section>
     {completed===session.blocks.length&&!sessionDone&&<button className="tf-primary" disabled={busy} onClick={async()=>{if(await act({type:'finish'}))celebrate('Full training session');}}><Trophy size={19}/>Finish and earn your session badge</button>}
