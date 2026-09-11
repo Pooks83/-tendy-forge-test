@@ -43,7 +43,8 @@ test('saved account draft resumes the exact consented setup step and operation',
  const restored=state.restoreOnboardingState({
   step:'gear',
   operationKey:'operation-resume-1',
-  data:{nickname:'Finn',ageBand:'10–12',catches:'right',experience:'developing',equipment:['tennis-ball'],plannedDays:[],missionMinutes:25,consentAccepted:true,analyticsAllowed:false},
+  consentAccepted:true,
+  data:{nickname:'Finn',ageBand:'10–12',catches:'right',experience:'developing',equipment:['tennis-ball'],plannedDays:[],missionMinutes:25,analyticsAllowed:false},
  });
  assert.equal(restored.step,'gear');
  assert.equal(restored.operationKey,'operation-resume-1');
@@ -52,7 +53,7 @@ test('saved account draft resumes the exact consented setup step and operation',
 });
 
 test('invalid or pre-consent saved state cannot bypass parent permission',()=>{
- const restored=state.restoreOnboardingState({step:'training-plan',operationKey:'unsafe',data:{nickname:'Child',consentAccepted:false}});
+ const restored=state.restoreOnboardingState({step:'training-plan',operationKey:'unsafe',consentAccepted:false,data:{nickname:'Child'}});
  assert.equal(restored.step,'welcome');
  assert.equal(restored.data.nickname,'');
  assert.notEqual(restored.operationKey,'unsafe');
