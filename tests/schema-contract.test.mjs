@@ -42,6 +42,17 @@ test('mission execution is revisioned, versioned, ordered, and independent from 
  assert.ok(activityIndexes.some(index=>index.unique===1),'mission activity ordinal must be unique');
 });
 
+test('training content stores immutable reviewed activity versions',()=>{
+ const db=migratedDatabase();
+ const tables=db.prepare("SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name").all().map(row=>row.name);
+ for(const name of ['activity_families','activity_versions'])assert.ok(tables.includes(name),`${name} missing`);
+ const columns=db.prepare("PRAGMA table_info('activity_versions')").all().map(row=>row.name);
+ assert.deepEqual(columns,['activity_id','version','family_id','payload_json','content_status','development_reviewer_id','development_reviewed_at','safety_reviewer_id','safety_reviewed_at','published_at','retired_at','retirement_reason','created_at']);
+ const indexes=db.prepare("PRAGMA index_list('activity_versions')").all();
+ assert.ok(indexes.some(index=>index.unique===1),'activity version identity must be unique');
+ assert.ok(indexes.some(index=>index.name==='idx_activity_versions_published_family'),'published family lookup index missing');
+});
+
 test('onboarding drafts are account scoped and contain consent recovery metadata',()=>{
  const db=migratedDatabase();
  const columns=db.prepare("PRAGMA table_info('onboarding_drafts')").all().map(row=>row.name);
