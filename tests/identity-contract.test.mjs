@@ -9,6 +9,7 @@ const validInput=(overrides={})=>({
  catches:'left',
  experience:'developing',
  equipment:[],
+ spaces:['small-indoor'],
  plannedDays:['monday','thursday'],
  missionMinutes:25,
  consentAccepted:true,
@@ -37,6 +38,7 @@ test('onboarding accepts no equipment and canonical duration values',()=>{
  const value=contract.normalizeOnboardingInput(validInput());
  assert.equal(value.nickname,'Henry');
  assert.deepEqual(value.equipment,[]);
+ assert.deepEqual(value.spaces,['small-indoor']);
  assert.deepEqual(value.plannedDays,['monday','thursday']);
  assert.equal(value.missionMinutes,25);
  assert.deepEqual(value.optionalPermissions,{analytics:false,notifications:false,clips:false});
@@ -47,6 +49,7 @@ test('onboarding rejects invalid duration, duplicate days, and unsupported profi
  assert.throws(()=>contract.normalizeOnboardingInput(validInput({plannedDays:['monday','monday']})),error=>error?.code==='INVALID_SETUP');
  assert.throws(()=>contract.normalizeOnboardingInput(validInput({catches:'both'})),error=>error?.code==='INVALID_SETUP');
  assert.throws(()=>contract.normalizeOnboardingInput(validInput({experience:'professional'})),error=>error?.code==='INVALID_SETUP');
+ assert.throws(()=>contract.normalizeOnboardingInput(validInput({spaces:['hallway']})),error=>error?.code==='INVALID_SETUP');
 });
 
 test('onboarding uses the canonical age choices and flags unsupported training eligibility',()=>{
@@ -62,14 +65,14 @@ test('player projection includes training continuity but excludes adult-only dat
  assert.equal(typeof contract.buildPlayerProjection,'function');
  const result=contract.buildPlayerProjection({
   id:'player-1',nickname:'Goalie',team:'Private team',ageBand:'10–12',catches:'left',experience:'developing',revision:4,
-  equipment:['tennis-ball'],plannedDays:['monday'],missionMinutes:15,setupStatus:'ready',
+  equipment:['tennis-ball'],spaces:['small-indoor'],plannedDays:['monday'],missionMinutes:15,setupStatus:'ready',
   grants:['coach@example.com'],consentVersion:'secret',ownerId:'adult-1',
  },{
   version:2,pathId:'foundation',week:1,day:0,cycle:0,sets:{a:true},rests:{},sessions:[{id:'s1'}],
   answers:{q:{choice:1}},safetyStopped:false,checks:[{reviewedBy:'adult-1',note:'adult note'}],
   evaluations:[{reviewedBy:'coach-1',note:'coach note'}],
  });
- assert.deepEqual(result.profile,{id:'player-1',nickname:'Goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:['tennis-ball'],plannedDays:['monday'],missionMinutes:15,setupStatus:'ready',revision:4});
+ assert.deepEqual(result.profile,{id:'player-1',nickname:'Goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:['tennis-ball'],spaces:['small-indoor'],plannedDays:['monday'],missionMinutes:15,setupStatus:'ready',revision:4});
  assert.deepEqual(result.training,{version:2,pathId:'foundation',week:1,day:0,cycle:0,sets:{a:true},rests:{},sessions:[{id:'s1'}],answers:{q:{choice:1}},safetyStopped:false});
  const serialized=JSON.stringify(result);
  for(const forbidden of ['coach@example.com','secret','adult-1','coach-1','adult note','coach note','Private team'])assert.equal(serialized.includes(forbidden),false);

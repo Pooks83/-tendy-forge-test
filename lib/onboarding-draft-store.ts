@@ -6,6 +6,7 @@ const AGE_BANDS=new Set(['','Under 10','10–12','13–15','16 or older']);
 const CATCHES=new Set(['left','right']);
 const EXPERIENCE=new Set(['new','developing','experienced']);
 const EQUIPMENT=new Set(['tennis-ball','reaction-ball','wall-space','resistance-band','cones']);
+const SPACES=new Set(['small-indoor']);
 const WEEKDAYS=new Set(['monday','tuesday','wednesday','thursday','friday','saturday','sunday']);
 const MISSION_MINUTES=new Set([15,25,35]);
 
@@ -39,6 +40,7 @@ export function normalizeOnboardingDraft(raw:unknown,operationKey:string){
    catches:source.catches,
    experience:source.experience,
    equipment:normalizedArray(source.equipment,EQUIPMENT,EQUIPMENT.size),
+   spaces:normalizedArray(source.spaces??[],SPACES,SPACES.size),
    plannedDays:normalizedArray(source.plannedDays,WEEKDAYS,5),
    missionMinutes:source.missionMinutes,
    analyticsAllowed:source.analyticsAllowed===true,

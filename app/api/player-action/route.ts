@@ -7,7 +7,7 @@ import {normalizeTrainingState} from '@/lib/training.mjs';
 import {trainingDb} from '@/lib/training-store';
 
 export const dynamic='force-dynamic';
-type Row={id:string;nickname:string;age_band:string;catches:string;experience:string;equipment_json:string;planned_days_json:string;mission_minutes:number;setup_status:string;state:string;revision:number};
+type Row={id:string;nickname:string;age_band:string;catches:string;experience:string;equipment_json:string;available_spaces_json:string;planned_days_json:string;mission_minutes:number;setup_status:string;state:string;revision:number};
 const ALLOWED_ACTIONS=new Set(['stop','set','pause-rest','resume-rest','answer','finish','next']);
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const failure=(error:unknown)=>{
@@ -35,12 +35,12 @@ export async function POST(request:Request){
   const operation=`player-action:${profileId}`;
   const stored=await readStoredOperation(db,identity.id,operationKey,operation);
   if(stored)return reply(stored);
-  const row=await db.prepare('SELECT id,nickname,age_band,catches,experience,equipment_json,planned_days_json,mission_minutes,setup_status,state,revision FROM training_profiles WHERE id=?').bind(profileId).first<Row>();
+  const row=await db.prepare('SELECT id,nickname,age_band,catches,experience,equipment_json,available_spaces_json,planned_days_json,mission_minutes,setup_status,state,revision FROM training_profiles WHERE id=?').bind(profileId).first<Row>();
   if(!row)throw canonicalError('PLAYER_CONTEXT_REQUIRED','Choose your goalie again.',409);
   const state=applyAction(normalizeTrainingState(JSON.parse(row.state)),input.action,{role:'owner',id:identity.id});
   const result=await db.prepare('UPDATE training_profiles SET state=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?').bind(JSON.stringify(state),new Date().toISOString(),profileId,input.revision).run();
   if(!result.meta.changes)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
-  const projection=buildPlayerProjection({id:row.id,nickname:row.nickname,ageBand:row.age_band,catches:row.catches,experience:row.experience,equipment:parseArray(row.equipment_json),plannedDays:parseArray(row.planned_days_json),missionMinutes:row.mission_minutes,setupStatus:row.setup_status,revision:row.revision+1},state);
+  const projection=buildPlayerProjection({id:row.id,nickname:row.nickname,ageBand:row.age_band,catches:row.catches,experience:row.experience,equipment:parseArray(row.equipment_json),spaces:parseArray(row.available_spaces_json),plannedDays:parseArray(row.planned_days_json),missionMinutes:row.mission_minutes,setupStatus:row.setup_status,revision:row.revision+1},state);
   const now=new Date().toISOString();
   await db.batch([
    db.prepare('INSERT INTO audit_events(id,actor_account_id,profile_id,event_type,metadata_json,created_at) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),identity.id,profileId,'PLAYER_TRAINING_ACTION',JSON.stringify({actionType:input.action.type}),now),

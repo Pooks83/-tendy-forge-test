@@ -15,7 +15,7 @@ async function setup(){
 }
 
 const input={
- nickname:'Test goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:[],
+ nickname:'Test goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:[],spaces:['small-indoor'],
  plannedDays:['monday','thursday'],missionMinutes:25,consentAccepted:true,
  consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',
  optionalPermissions:{analytics:false,notifications:false,clips:false},
@@ -62,8 +62,8 @@ test('onboarding atomically creates profile relationship consent preferences con
    const count=await db.prepare(`SELECT count(*) AS n FROM ${table}`).first();
    assert.equal(count.n,1,table);
   }
-  const profile=await db.prepare('SELECT nickname,team,age_band,catches,experience,equipment_json,planned_days_json,mission_minutes,setup_status FROM training_profiles WHERE id=?').bind(created.data.profileId).first();
-  assert.deepEqual(profile,{nickname:'Test goalie',team:'',age_band:'10–12',catches:'left',experience:'developing',equipment_json:'[]',planned_days_json:'["monday","thursday"]',mission_minutes:25,setup_status:'ready'});
+  const profile=await db.prepare('SELECT nickname,team,age_band,catches,experience,equipment_json,available_spaces_json,planned_days_json,mission_minutes,setup_status FROM training_profiles WHERE id=?').bind(created.data.profileId).first();
+  assert.deepEqual(profile,{nickname:'Test goalie',team:'',age_band:'10–12',catches:'left',experience:'developing',equipment_json:'[]',available_spaces_json:'["small-indoor"]',planned_days_json:'["monday","thursday"]',mission_minutes:25,setup_status:'ready'});
  }finally{await mf.dispose();}
 });
 
@@ -105,9 +105,19 @@ test('household summary contains setup fields but not training state or consent 
   const result=await call(mf);
   assert.equal(result.status,200);
   assert.equal(result.data.profiles.length,1);
-  assert.deepEqual(result.data.profiles[0],{id:result.data.profiles[0].id,nickname:'Test goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:[],plannedDays:['monday','thursday'],missionMinutes:25,setupStatus:'ready',active:true});
+  assert.deepEqual(result.data.profiles[0],{id:result.data.profiles[0].id,nickname:'Test goalie',ageBand:'10–12',catches:'left',experience:'developing',equipment:[],spaces:['small-indoor'],plannedDays:['monday','thursday'],missionMinutes:25,setupStatus:'ready',active:true});
   assert.equal(JSON.stringify(result.data).includes('state'),false);
   assert.equal(JSON.stringify(result.data).includes('consentVersion'),false);
+ }finally{await mf.dispose();}
+});
+
+test('owner can idempotently confirm the persisted training space for an existing profile',async()=>{
+ const {mf,db}=await setup();try{
+  const created=await call(mf,{method:'POST',body:{...input,spaces:[]},key:'space-profile-create'});const body={profileId:created.data.profileId,revision:0,spaces:['small-indoor']};
+  const confirmed=await call(mf,{method:'PUT',body,key:'space-confirm-1'});assert.equal(confirmed.status,201);assert.deepEqual(confirmed.data,{profileId:created.data.profileId,spaces:['small-indoor'],revision:1});
+  const replay=await call(mf,{method:'PUT',body,key:'space-confirm-1'});assert.equal(replay.status,200);assert.deepEqual(replay.data,confirmed.data);
+  const row=await db.prepare('SELECT available_spaces_json,revision FROM training_profiles WHERE id=?').bind(created.data.profileId).first();assert.deepEqual(row,{available_spaces_json:'["small-indoor"]',revision:1});assert.equal((await db.prepare("SELECT count(*) AS n FROM audit_events WHERE event_type='TRAINING_SPACE_CONFIRMED'").first()).n,1);
+  const forbidden=await call(mf,{user:'other-parent',method:'PUT',body:{...body,revision:1},key:'space-other'});assert.equal(forbidden.status,403);assert.equal((await db.prepare('SELECT revision FROM training_profiles WHERE id=?').bind(created.data.profileId).first()).revision,1);
  }finally{await mf.dispose();}
 });
 
@@ -130,7 +140,7 @@ test('consented onboarding draft resumes only for the same adult account',async(
   const body={
    step:'gear',operationKey:'final-create-key-1',consentAccepted:true,
    consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',
-   data:{nickname:'Finn',ageBand:'10–12',catches:'right',experience:'developing',equipment:[],plannedDays:[],missionMinutes:25,analyticsAllowed:false},
+   data:{nickname:'Finn',ageBand:'10–12',catches:'right',experience:'developing',equipment:[],spaces:[],plannedDays:[],missionMinutes:25,analyticsAllowed:false},
   };
   const saved=await callDraft(mf,{method:'PUT',body,key:'final-create-key-1'});
   assert.equal(saved.status,200);

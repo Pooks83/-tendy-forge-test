@@ -24,7 +24,7 @@ export async function createGoalieSetup(db:D1Database,identity:AdultIdentity,raw
  const purposes=JSON.stringify(['training','progress','safety']);
  try{
   await db.batch([
-   db.prepare('INSERT INTO training_profiles(id,owner_id,nickname,team,age_band,state,revision,created_at,catches,experience,equipment_json,planned_days_json,mission_minutes,setup_status,updated_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM training_profiles WHERE owner_id=?)<8').bind(profileId,identity.id,input.nickname,'',input.ageBand,JSON.stringify(newTrainingState()),0,now,input.catches,input.experience,JSON.stringify(input.equipment),JSON.stringify(input.plannedDays),input.missionMinutes,'ready',now,identity.id),
+   db.prepare('INSERT INTO training_profiles(id,owner_id,nickname,team,age_band,state,revision,created_at,catches,experience,equipment_json,available_spaces_json,planned_days_json,mission_minutes,setup_status,updated_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT count(*) FROM training_profiles WHERE owner_id=?)<8').bind(profileId,identity.id,input.nickname,'',input.ageBand,JSON.stringify(newTrainingState()),0,now,input.catches,input.experience,JSON.stringify(input.equipment),JSON.stringify(input.spaces),JSON.stringify(input.plannedDays),input.missionMinutes,'ready',now,identity.id),
    db.prepare('INSERT INTO guardian_player(account_id,profile_id,relationship,status,created_at) VALUES(?,?,?,?,?)').bind(identity.id,profileId,'guardian','active',now),
    db.prepare('INSERT INTO consent_records(id,account_id,profile_id,consent_version,purposes_json,policy_version,accepted_at) VALUES(?,?,?,?,?,?,?)').bind(consentId,identity.id,profileId,input.consentVersion,purposes,input.policyVersion,now),
    db.prepare('INSERT INTO privacy_preferences(profile_id,analytics_allowed,notifications_allowed,clips_allowed,updated_at) VALUES(?,?,?,?,?)').bind(profileId,input.optionalPermissions.analytics?1:0,input.optionalPermissions.notifications?1:0,input.optionalPermissions.clips?1:0,now),
@@ -63,7 +63,7 @@ export async function reconcileLegacySetup(db:D1Database,identity:AdultIdentity,
  const auditId=`legacy-reconcile:${profileId}`;
  try{
   await db.batch([
-   db.prepare("UPDATE training_profiles SET nickname=?,age_band=?,catches=?,experience=?,equipment_json=?,planned_days_json=?,mission_minutes=?,setup_status='ready',updated_at=? WHERE id=? AND owner_id=? AND setup_status='legacy-review-required'").bind(input.nickname,input.ageBand,input.catches,input.experience,JSON.stringify(input.equipment),JSON.stringify(input.plannedDays),input.missionMinutes,now,profileId,identity.id),
+   db.prepare("UPDATE training_profiles SET nickname=?,age_band=?,catches=?,experience=?,equipment_json=?,available_spaces_json=?,planned_days_json=?,mission_minutes=?,setup_status='ready',updated_at=? WHERE id=? AND owner_id=? AND setup_status='legacy-review-required'").bind(input.nickname,input.ageBand,input.catches,input.experience,JSON.stringify(input.equipment),JSON.stringify(input.spaces),JSON.stringify(input.plannedDays),input.missionMinutes,now,profileId,identity.id),
    db.prepare('INSERT OR IGNORE INTO guardian_player(account_id,profile_id,relationship,status,created_at) VALUES(?,?,?,?,?)').bind(identity.id,profileId,'guardian','active',now),
    db.prepare('INSERT INTO consent_records(id,account_id,profile_id,consent_version,purposes_json,policy_version,accepted_at) VALUES(?,?,?,?,?,?,?)').bind(consentId,identity.id,profileId,input.consentVersion,JSON.stringify(['training','progress','safety']),input.policyVersion,now),
    db.prepare('INSERT INTO privacy_preferences(profile_id,analytics_allowed,notifications_allowed,clips_allowed,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(profile_id) DO UPDATE SET analytics_allowed=excluded.analytics_allowed,notifications_allowed=excluded.notifications_allowed,clips_allowed=excluded.clips_allowed,updated_at=excluded.updated_at').bind(profileId,input.optionalPermissions.analytics?1:0,input.optionalPermissions.notifications?1:0,input.optionalPermissions.clips?1:0,now),
@@ -131,4 +131,22 @@ export async function getActivePlayer(db:D1Database,identity:AdultIdentity){
  if(!context)throw canonicalError('PLAYER_CONTEXT_REQUIRED','Choose your goalie again.',409);
  await relationshipStatus(db,identity,context.profile_id);
  return project(await playerRow(db,context.profile_id));
+}
+
+export async function confirmTrainingSpace(db:D1Database,identity:AdultIdentity,raw:unknown,operationKey:string){
+ if(!raw||typeof raw!=='object')throw canonicalError('INVALID_SETUP','Confirm the available training space.',400);
+ const input=raw as Record<string,unknown>;const profileId=typeof input.profileId==='string'?input.profileId:'';const revision=input.revision;
+ if(!profileId||!Number.isInteger(revision)||!Array.isArray(input.spaces)||input.spaces.length!==1||input.spaces[0]!=='small-indoor')throw canonicalError('INVALID_SETUP','Confirm the clear indoor training area.',400);
+ const owned=await db.prepare('SELECT revision FROM training_profiles WHERE id=? AND owner_id=?').bind(profileId,identity.id).first<{revision:number}>();if(!owned)throw canonicalError('FORBIDDEN','That goalie is not available to this parent account.',403);
+ const operation=`confirm-training-space:${profileId}:${revision}:small-indoor`;const stored=await readStoredOperation(db,identity.id,operationKey,operation);if(stored)return {data:stored,replayed:true};
+ const now=new Date().toISOString();const data={profileId,spaces:['small-indoor'],revision:(revision as number)+1};
+ try{
+  const results=await db.batch([
+   db.prepare('UPDATE training_profiles SET available_spaces_json=?,revision=revision+1,updated_at=? WHERE id=? AND owner_id=? AND revision=?').bind('["small-indoor"]',now,profileId,identity.id,revision),
+   db.prepare('INSERT INTO audit_events(id,actor_account_id,profile_id,event_type,metadata_json,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM training_profiles WHERE id=? AND owner_id=? AND revision=?)').bind(crypto.randomUUID(),identity.id,profileId,'TRAINING_SPACE_CONFIRMED','{"spaces":["small-indoor"]}',now,profileId,identity.id,(revision as number)+1),
+   db.prepare('INSERT INTO idempotency_records(account_id,operation_key,operation,response_json,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM training_profiles WHERE id=? AND owner_id=? AND revision=?)').bind(identity.id,operationKey,operation,JSON.stringify(data),now,profileId,identity.id,(revision as number)+1),
+  ]);
+  if(!results[0].meta.changes)throw canonicalError('STALE_REVISION','Profile settings changed. Reload before confirming the space.',409);
+  return {data,replayed:false};
+ }catch(error){const replay=await readStoredOperation(db,identity.id,operationKey,operation);if(replay)return {data:replay,replayed:true};throw error;}
 }

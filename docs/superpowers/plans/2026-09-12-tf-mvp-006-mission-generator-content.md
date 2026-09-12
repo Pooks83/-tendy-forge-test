@@ -194,19 +194,19 @@ Commit: `feat: persist generated mission plans`
 - Player receives exactly one dominant next action: resume, start eligible mission, rest/recovery, or adult action required.
 - Drill renders the exact snapshot prescription and any approved substitution; it never reads a newer catalog version mid-session.
 
-- [ ] **Step 1: Add failing child-state tests**
+- [x] **Step 1: Add failing child-state tests**
 
 Cover concise `CONTENT_REVIEW_REQUIRED`, equipment substitution disclosure, safety/recovery dominance, exact 15/25/35-minute label, 3–5 activity count and no child exposure of reviewer identity or internal scoring math.
 
-- [ ] **Step 2: Run focused tests and confirm failure**
+- [x] **Step 2: Run focused tests and confirm failure**
 
 Run: `node --test tests/today-state.test.mjs tests/ui-components.test.mjs tests/gj-02-training-completion.test.mjs`
 
-- [ ] **Step 3: Render canonical state/copy from the server plan**
+- [x] **Step 3: Render canonical state/copy from the server plan**
 
 Use “An adult needs to review your training plan” when no publishable intervention exists. Substitution copy names what changed and preserves exact dose/safety. Do not add a browse-to-decide catalog or a second CTA.
 
-- [ ] **Step 4: Run focused tests and commit**
+- [x] **Step 4: Run focused tests and commit**
 
 Run: `node --test tests/today-state.test.mjs tests/ui-components.test.mjs tests/gj-02-training-completion.test.mjs`
 
