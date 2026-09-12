@@ -1,5 +1,6 @@
 // Adult-owned player profiles and explicitly granted coach access.
 import {sqliteTable,text,integer,index,primaryKey,uniqueIndex} from 'drizzle-orm/sqlite-core';
+import {sql} from 'drizzle-orm';
 export const profiles=sqliteTable('training_profiles',{
  id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),nickname:text('nickname').notNull(),team:text('team').notNull(),ageBand:text('age_band').notNull(),state:text('state').notNull(),revision:integer('revision').notNull().default(0),createdAt:text('created_at').notNull(),
  catches:text('catches'),experience:text('experience'),equipmentJson:text('equipment_json'),plannedDaysJson:text('planned_days_json'),missionMinutes:integer('mission_minutes'),setupStatus:text('setup_status').notNull().default('legacy-review-required'),updatedAt:text('updated_at'),
@@ -50,4 +51,9 @@ export const productEvents=sqliteTable('product_events',{
 
 export const missionInstances=sqliteTable('mission_instances',{
  id:text('id').primaryKey(),profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),missionKey:text('mission_key').notNull(),status:text('status').notNull(),startedAt:text('started_at').notNull(),completedAt:text('completed_at'),updatedAt:text('updated_at').notNull(),
-},t=>[uniqueIndex('idx_mission_instances_profile_key').on(t.profileId,t.missionKey),index('idx_mission_instances_profile_status').on(t.profileId,t.status)]);
+ revision:integer('revision').notNull().default(1),currentActivityIndex:integer('current_activity_index').notNull().default(0),contentVersion:text('content_version').notNull().default('tf-curriculum-legacy'),executionSnapshotJson:text('execution_snapshot_json').notNull().default('{"blocks":[]}'),pausedAt:text('paused_at'),interruptedAt:text('interrupted_at'),abandonedAt:text('abandoned_at'),
+},t=>[uniqueIndex('idx_mission_instances_profile_key').on(t.profileId,t.missionKey),uniqueIndex('idx_mission_instances_one_active').on(t.profileId).where(sql`${t.status} in ('IN_PROGRESS','PAUSED','INTERRUPTED')`),index('idx_mission_instances_profile_status').on(t.profileId,t.status)]);
+
+export const activityInstances=sqliteTable('activity_instances',{
+ id:text('id').primaryKey(),missionInstanceId:text('mission_instance_id').notNull().references(()=>missionInstances.id,{onDelete:'cascade'}),activityKey:text('activity_key').notNull(),ordinal:integer('ordinal').notNull(),status:text('status').notNull(),resultJson:text('result_json'),restRemainingSeconds:integer('rest_remaining_seconds').notNull().default(0),startedAt:text('started_at'),completedAt:text('completed_at'),updatedAt:text('updated_at').notNull(),
+},t=>[uniqueIndex('idx_activity_instances_mission_ordinal').on(t.missionInstanceId,t.ordinal),uniqueIndex('idx_activity_instances_mission_key').on(t.missionInstanceId,t.activityKey)]);

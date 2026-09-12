@@ -20,7 +20,7 @@ async function responseFor(db:D1Database,row:ChallengeRow|null,safetyStopped:boo
  const response=resolveFirstValueStatus(row,safetyStopped,now);
  if(response.status!=='completed')return response;
  const mission=await db.prepare('SELECT status FROM mission_instances WHERE profile_id=? AND mission_key=?').bind(profileId,missionId).first<{status:string}>();
- return {...response,missionId,missionStatus:mission?.status||'not-started'};
+ return {...response,missionId,missionStatus:mission?.status.toLowerCase().replaceAll('_','-')||'not-started'};
 }
 
 export async function getFirstChallenge(db:D1Database,identity:AdultIdentity){

@@ -29,12 +29,17 @@ test('product event ledger has versioned pseudonymous context and a unique logic
  assert.ok(indexes.some(index=>index.unique===1),'logical event key must be unique');
 });
 
-test('mission instances preserve authoritative start state independently from analytics',()=>{
+test('mission execution is revisioned, versioned, ordered, and independent from analytics',()=>{
  const db=migratedDatabase();
  const columns=db.prepare("PRAGMA table_info('mission_instances')").all().map(row=>row.name);
- assert.deepEqual(columns,['id','profile_id','mission_key','status','started_at','completed_at','updated_at']);
+ for(const name of ['revision','current_activity_index','content_version','execution_snapshot_json','paused_at','interrupted_at','abandoned_at'])assert.ok(columns.includes(name),`${name} missing`);
  const indexes=db.prepare("PRAGMA index_list('mission_instances')").all();
  assert.ok(indexes.some(index=>index.unique===1),'profile mission key must be unique');
+ assert.ok(indexes.some(index=>index.name==='idx_mission_instances_one_active'&&index.unique===1),'only one active mission is allowed per player');
+ const activityColumns=db.prepare("PRAGMA table_info('activity_instances')").all().map(row=>row.name);
+ assert.deepEqual(activityColumns,['id','mission_instance_id','activity_key','ordinal','status','result_json','rest_remaining_seconds','started_at','completed_at','updated_at']);
+ const activityIndexes=db.prepare("PRAGMA index_list('activity_instances')").all();
+ assert.ok(activityIndexes.some(index=>index.unique===1),'mission activity ordinal must be unique');
 });
 
 test('onboarding drafts are account scoped and contain consent recovery metadata',()=>{

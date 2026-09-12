@@ -1,7 +1,7 @@
 import {requireAdultIdentity} from '@/lib/account-identity';
 import {canonicalError} from '@/lib/identity-contract.mjs';
 import {validateOperationKey} from '@/lib/idempotency-store';
-import {getCurrentMission,startCurrentMission} from '@/lib/mission-store';
+import {getCurrentMission,mutateCurrentMission,startCurrentMission} from '@/lib/mission-store';
 import {trainingDb} from '@/lib/training-store';
 
 export const dynamic='force-dynamic';
@@ -23,11 +23,17 @@ export async function POST(request:Request){
   if(!request.headers.get('content-type')?.includes('application/json'))throw canonicalError('INVALID_ACTION','Try that action again.',415);
   const operationKey=validateOperationKey(request.headers.get('idempotency-key'));
   const text=await request.text();
-  if(text.length>100)throw canonicalError('INVALID_ACTION','Try that action again.',413);
+  if(text.length>3000)throw canonicalError('INVALID_ACTION','Try that action again.',413);
   let input:unknown;
   try{input=JSON.parse(text);}catch{throw canonicalError('INVALID_ACTION','Try that action again.',400);}
-  if(!input||typeof input!=='object'||!('action' in input)||input.action!=='start')throw canonicalError('INVALID_ACTION','That mission action is not available.',400);
-  const result=await startCurrentMission(trainingDb(),identity,operationKey);
-  return reply(result.data,result.replayed?200:201);
+  if(!input||typeof input!=='object'||!('action' in input)||typeof input.action!=='string')throw canonicalError('INVALID_ACTION','That mission action is not available.',400);
+  if(input.action==='start'){
+   const result=await startCurrentMission(trainingDb(),identity,operationKey);
+   return reply(result.data,result.replayed?200:201);
+  }
+  const allowed=new Set(['start-activity','record-result','start-rest','end-rest','complete-activity','skip-activity','pause','interrupt','resume','abandon','complete-mission']);
+  if(!allowed.has(input.action)||!('missionId' in input)||typeof input.missionId!=='string'||!('profileContextId' in input)||typeof input.profileContextId!=='string'||!('revision' in input)||!Number.isInteger(input.revision))throw canonicalError('INVALID_ACTION','That mission action is not available.',400);
+  const result=await mutateCurrentMission(trainingDb(),identity,input as Parameters<typeof mutateCurrentMission>[2],operationKey);
+  return reply(result.data);
  }catch(error){return failure(error);}
 }
