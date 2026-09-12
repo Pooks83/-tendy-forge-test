@@ -159,6 +159,11 @@ function legacyProjection(raw:string,snapshot:Session,next:MissionExecution,time
 
 function eventFor(input:MutationInput){return ({'start-activity':'activity_started','complete-activity':'activity_completed','skip-activity':'activity_skipped','complete-mission':'mission_completed','abandon':'mission_abandoned'} as Record<string,string>)[input.action]||null;}
 
+function mutationOperation(profileId:string,input:MutationInput){
+ const result=input.result?{completedSets:input.result.completedSets??null,usedEasierVersion:input.result.usedEasierVersion===true,answer:input.result.answer??null}:null;
+ return `mission-action:${profileId}:${JSON.stringify({action:input.action,missionId:input.missionId,profileContextId:input.profileContextId,activityKey:input.activityKey??null,result,reason:input.reason??null,queuedAt:input.queuedAt??null,offlineMutationId:input.offlineMutationId??null})}`;
+}
+
 function offlineEventStatements(db:D1Database,identity:AdultIdentity,profileId:string,input:MutationInput,timestamp:string,condition:string,conditionBindings:(string|number)[]){
  if(!input.queuedAt||!input.offlineMutationId)return [];
  const queuedSeconds=Math.max(0,Math.floor((Date.parse(timestamp)-Date.parse(input.queuedAt))/1000));
@@ -183,7 +188,7 @@ function normalizedResult(input:MutationInput,before:MissionExecution,snapshot:E
 export async function mutateCurrentMission(db:D1Database,identity:AdultIdentity,input:MutationInput,operationKey:string,now=new Date()){
  const active=await current(db,identity);
  if(input.profileContextId!==active.profileId)throw canonicalError('PLAYER_CONTEXT_REQUIRED','Return to the goalie this progress belongs to before syncing it.',409);
- const operation=`mission-action:${active.profileId}:${input.missionId}:${input.action}`;const stored=await readStoredOperation(db,identity.id,operationKey,operation);if(stored)return {data:stored,replayed:true};
+ const operation=mutationOperation(active.profileId,input);const stored=await readStoredOperation(db,identity.id,operationKey,operation);if(stored)return {data:stored,replayed:true};
  const loaded=await loadMission(db,identity,active.profileId,input.missionId,sessionForMission(input.missionId,active.session));if(!loaded)throw canonicalError('MISSION_NOT_FOUND','Start today’s mission before recording progress.',404);
  if(input.revision!==loaded.row.revision)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
  if(active.player.training.safetyStopped&&input.action!=='safety-stop')throw canonicalError('SAFETY_STOPPED','Training is paused. Ask a parent or guardian to check in before continuing.',409);

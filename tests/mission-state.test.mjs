@@ -90,6 +90,10 @@ test('safety stop interrupts an active mission and requires an explicit later re
  assert.equal(state.status,'INTERRUPTED');assert.equal(state.interruptionReason,'safety-stop');
  assert.throws(()=>mission.transitionMission(state,{type:'START_ACTIVITY',activityKey:'warm'},at),error=>error?.code==='INVALID_STATE_TRANSITION');
  assert.equal(mission.transitionMission(state,{type:'RESUME'},at).status,'IN_PROGRESS');
+ const appClosed=mission.transitionMission(started(['warm']),{type:'INTERRUPT',reason:'app-closed'},at);
+ const painAfterInterrupt=mission.transitionMission(appClosed,{type:'SAFETY_STOP'},at);
+ assert.equal(painAfterInterrupt.status,'INTERRUPTED');assert.equal(painAfterInterrupt.interruptionReason,'safety-stop');
+ assert.strictEqual(mission.transitionMission(painAfterInterrupt,{type:'SAFETY_STOP'},at),painAfterInterrupt);
 });
 
 test('Today projection covers ready, active, rest, complete, safety, offline, loading, and recovery',()=>{
@@ -100,6 +104,7 @@ test('Today projection covers ready, active, rest, complete, safety, offline, lo
  assert.deepEqual(mission.resolveTodayExecution({mission:active}),{state:'active-resume',action:'resume-mission'});
  assert.deepEqual(mission.resolveTodayExecution({mission:resting}),{state:'rest-recovery',action:'resume-rest'});
  assert.deepEqual(mission.resolveTodayExecution({mission:completed}),{state:'mission-complete',action:'acknowledge-completion'});
+ assert.deepEqual(mission.resolveTodayExecution({mission:{...active,status:'ABANDONED'}}),{state:'blocked-adult',action:'return-to-adult'});
  assert.deepEqual(mission.resolveTodayExecution({mission:active,safetyStopped:true}),{state:'blocked-adult',action:'return-to-adult'});
  assert.deepEqual(mission.resolveTodayExecution({mission:active,offlinePending:true}),{state:'offline-cached',action:'continue-offline'});
  assert.deepEqual(mission.resolveTodayExecution({loading:true}),{state:'loading',action:null});

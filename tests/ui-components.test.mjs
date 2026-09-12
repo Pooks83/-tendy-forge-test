@@ -126,6 +126,8 @@ test('player activity reload renders controls from authoritative mission state',
  assert.match(betweenSets,/Start 30-second rest/);
  const resting=render({key:drill.id,ordinal:0,status:'resting',result:{completedSets:1},requiredSets:drill.sets,restSeconds:drill.restSeconds,restRemainingSeconds:20,restCompletedAfterSet:0});
  assert.match(resting,/Rest 20s/);assert.match(resting,/disabled/);
+ const busy=renderToStaticMarkup(React.createElement(Dialog,{open:true},React.createElement(DrillDetail,{drill,state:newTrainingState(),session,mission:{...base,activities:[{key:drill.id,ordinal:0,status:'in-progress',result:null,requiredSets:drill.sets,restSeconds:drill.restSeconds,restRemainingSeconds:0,restCompletedAfterSet:0}]},busy:true,readOnly:false,act:async()=>true,onDone:()=>{},onExit:()=>{},saveError:'',onReload:()=>{}})));
+ const stopButton=busy.match(/<button[^>]*class="tf-link tf-stop"[^>]*>/)?.[0]||'';assert.ok(stopButton);assert.doesNotMatch(stopButton,/disabled/,'pain Stop remains available while an ordinary save is pending');
 });
 test('adult authentication starts from server-rendered top-level links',async()=>{
   const {AdultSignInLink,AdultSignOutLink}=await vite.ssrLoadModule('/components/goalie-forge/auth-links.tsx');

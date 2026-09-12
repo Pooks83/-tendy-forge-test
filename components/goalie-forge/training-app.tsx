@@ -14,7 +14,7 @@ import {completeContextSwitch,contextSwitchOperationKey} from '@/lib/context-swi
 import {resolveTodayMissionAction} from '@/lib/today-state.mjs';
 import {missionMutation,resolveMissionActivityControl} from '@/lib/mission-client.mjs';
 import {sendMissionMutation} from '@/lib/mission-request.mjs';
-import {OFFLINE_MISSION_QUEUE_KEY,applyOfflineMutation,createOfflineMutation,enqueueOfflineMutation,projectOfflineQueue,reconcileOfflineQueue,restoreOfflineQueue,serializeOfflineQueue} from '@/lib/offline-mission-queue.mjs';
+import {OFFLINE_MISSION_QUEUE_KEY,applyOfflineMutation,createOfflineMutation,enqueueOfflineMutation,hasPendingSafetyStop,projectOfflineQueue,reconcileOfflineQueue,restoreOfflineQueue,serializeOfflineQueue} from '@/lib/offline-mission-queue.mjs';
 import {DrillMap} from './drill-map';
 import {OnboardingFlow} from '@/components/tendie-forge/onboarding-flow';
 import {PlayerFirstValueFlow} from '@/components/tendie-forge/player-first-value';
@@ -94,19 +94,21 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
  const adultProfile=profiles.find(p=>p.id===active)||profiles[0];
  const profile:Profile|undefined=player?{...player.profile,team:'',role:'player',state:player.training,grants:[]}:adultProfile;
  const playerMode=Boolean(player);
- const state=preview?sample:player?buildPlayerViewState(player.training,newTrainingState()) as TrainingState:adultProfile?.state||newTrainingState();
+ const baseState=preview?sample:player?buildPlayerViewState(player.training,newTrainingState()) as TrainingState:adultProfile?.state||newTrainingState();
+ const localSafetyPending=Boolean(player&&hasPendingSafetyStop(offlineQueue,player.profile.id));const state=localSafetyPending?{...baseState,safetyStopped:true}:baseState;
  const path=PATHS.find(p=>p.id===state.pathId)!;const generatedSession=useMemo(()=>buildSession(state.pathId,state.week,state.day,state.cycle||0),[state.pathId,state.week,state.day,state.cycle]);
  const session=playerMode&&mission?.executionSnapshot?.blocks?.length?mission.executionSnapshot:generatedSession;
  const sessionDrillIds=useMemo(()=>session.blocks.map(item=>item.id),[session]);
  const completed=playerMode&&mission?mission.activities.filter(item=>['completed','skipped'].includes(item.status)).length:session.blocks.filter(d=>isDrillDone(state,session,d)).length;
  const todayAction=resolveTodayMissionAction({missionInProgress:['in-progress','paused','interrupted'].includes(mission?.status||''),completedActivities:completed});
  const sessionDone=playerMode?mission?.status==='completed':state.sessions.some((s:{id:string})=>s.id===session.id);
+ const missionAbandoned=Boolean(playerMode&&mission?.status==='abandoned');
  const enabled=preview||Boolean(profile);const drillId=resolveTrainingDrill(enabled&&!showFirstValue,selected,sessionDrillIds);
  const drill=session.blocks.find(d=>d.id===drillId);const coach=profile?.role==='coach'&&!preview;
  const currentMissionActivity=playerMode?mission?.activities[mission.currentActivityIndex]:null;
  const skillChecks=state.checks as Array<{group:string;pathId:string;passed:boolean;date:string;skillId?:number}>;
  const navigate=useCallback((view:string,drillId:string|null=null,replace=false)=>{setTab(view);setSelected(drillId);if(typeof window!=='undefined'){const url=trainingLocation({view,drill:drillId});window.history[replace?'replaceState':'pushState']({},'',url);}},[]);
- const persistOfflineQueue=useCallback((queue:OfflineMutation[])=>{queueRef.current=queue;setOfflineQueue(queue);if(typeof window!=='undefined')window.localStorage.setItem(OFFLINE_MISSION_QUEUE_KEY,serializeOfflineQueue(queue));},[]);
+ const persistOfflineQueue=useCallback((queue:OfflineMutation[])=>{queueRef.current=queue;setOfflineQueue(queue);try{if(typeof window!=='undefined')window.localStorage.setItem(OFFLINE_MISSION_QUEUE_KEY,serializeOfflineQueue(queue));return true;}catch{return false;}},[]);
  const loadAdult=useCallback(async()=>{
   try{const result=await fetchTrainingProfiles();setProfiles(result.profiles);setActive(activeAdultProfileId(result.profiles));setMode(result.mode);setError('');}
   catch(e){setError(e instanceof Error?e.message:'Cannot load training');setMode('error');}
@@ -117,24 +119,30 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
   const current=missionRef.current;if(syncRef.current||!current||!queueRef.current.length)return;syncRef.current=true;setOfflineStatus('syncing');
   try{
    const result=await reconcileOfflineQueue({queue:queueRef.current,profileContextId:current.profileContextId,send:(item:OfflineMutation)=>sendMissionMutation(fetch,item),fetchAuthoritative:fetchMissionProjection});
-   persistOfflineQueue(result.queue);if(result.mission){const confirmed={...result.mission,pendingSync:false};missionRef.current=confirmed;setMission(confirmed);}
+   persistOfflineQueue(result.queue);if(result.mission){const confirmed={...result.mission,pendingSync:false};missionRef.current=confirmed;setMission(confirmed);if(confirmed.status==='interrupted'){const refreshed=await fetchPlayerProjection();if(refreshed)setPlayer(refreshed);}}
    setOfflineStatus(result.status as OfflineStatus);
   }finally{syncRef.current=false;}
  },[persistOfflineQueue]);
  useEffect(()=>{missionRef.current=mission;},[mission]);
- useEffect(()=>{const timer=window.setTimeout(()=>{const restored=restoreOfflineQueue(window.localStorage.getItem(OFFLINE_MISSION_QUEUE_KEY));persistOfflineQueue(restored);if(restored.length)setOfflineStatus('pending');},0);return()=>window.clearTimeout(timer);},[persistOfflineQueue]);
+ useEffect(()=>{const timer=window.setTimeout(()=>{try{const restored=restoreOfflineQueue(window.localStorage.getItem(OFFLINE_MISSION_QUEUE_KEY));const stored=persistOfflineQueue(restored);if(restored.length)setOfflineStatus(stored?'pending':'adult-review');}catch{setOfflineStatus('adult-review');}},0);return()=>window.clearTimeout(timer);},[persistOfflineQueue]);
  useEffect(()=>{const online=()=>void syncOffline();window.addEventListener('online',online);return()=>window.removeEventListener('online',online);},[syncOffline]);
  useEffect(()=>{if(!mission||mission.pendingSync||!offlineQueue.length)return;const timer=window.setTimeout(()=>{try{const projected=projectOfflineQueue(mission,offlineQueue) as MissionProjection;missionRef.current=projected;setMission(projected);}catch{setOfflineStatus('adult-review');}},0);return()=>window.clearTimeout(timer);},[mission,offlineQueue]);
  useEffect(()=>{if(mission&&offlineQueue.length&&offlineStatus==='pending'&&navigator.onLine)void syncOffline();},[mission,offlineQueue.length,offlineStatus,syncOffline]);
  useEffect(()=>{let current=true;void loadInitialAccess(fetch,readTrainingResponse).then(result=>{if(!current)return;if(result.kind==='player'){setPlayer(result.player as PlayerProjection);setMission(result.mission as MissionProjection);setProfiles([]);setMode('signed-in');setResumeFirstValue(true);setShowFirstValue(true);}else if(result.kind==='adult'){const adultProfiles=result.profiles as Profile[];setProfiles(adultProfiles);setActive(activeAdultProfileId(adultProfiles));setMode('signed-in');}else{setMode('guest');setProfiles([]);}setError('');}).catch(e=>{if(!current)return;setError(e instanceof Error?e.message:'Cannot load training');setMode('error');});return()=>{current=false;};},[]);
  useEffect(()=>{const sync=()=>{const next=parseTrainingLocation(window.location.search,sessionDrillIds,playerMode?'player':'adult');setTab(next.view);setSelected(next.drill);};sync();window.addEventListener('popstate',sync);return()=>window.removeEventListener('popstate',sync);},[sessionDrillIds,playerMode]);
  async function act(action:Action){
-  if(busyRef.current)return false;busyRef.current=true;setBusy(true);setError('');
+  if(busyRef.current){
+   const current=missionRef.current;
+   if(action.type!=='stop'||!playerMode||!profile||!current||!['in-progress','paused','interrupted'].includes(current.status))return false;
+   const queued=createOfflineMutation(current,'safety-stop');const optimistic=applyOfflineMutation(current,queued) as MissionProjection;const nextQueue=enqueueOfflineMutation(queueRef.current,queued);const stored=persistOfflineQueue(nextQueue);
+   missionRef.current=optimistic;setMission(optimistic);setPlayer(value=>value?{...value,training:{...value.training,safetyStopped:true}}:value);setOfflineStatus(stored?'pending':'adult-review');return true;
+  }
+  busyRef.current=true;setBusy(true);setError('');
   try{
    if(preview){setSample(applyAction(sample,action,{role:'owner',id:'preview-adult'}));return true;}
    if(!profile)throw new Error('An adult must set up a profile first.');
    if(playerMode){
-    if(action.type==='stop'&&(!mission||!['in-progress','paused'].includes(mission.status))){const operationKey=['player',profile.id,profile.revision,'stop'].join(':');const projected=await requestPlayerAction({revision:profile.revision,action},operationKey);setPlayer(projected);return true;}
+    if(action.type==='stop'&&(!mission||!['in-progress','paused','interrupted'].includes(mission.status))){const operationKey=['player',profile.id,profile.revision,'stop'].join(':');const projected=await requestPlayerAction({revision:profile.revision,action},operationKey);setPlayer(projected);return true;}
     if(!mission)throw new Error('Your mission could not be loaded. Reload saved progress.');
     const activity=mission.activities[mission.currentActivityIndex];
     let missionAction=action.type;const details:Record<string,unknown>={};
@@ -144,11 +152,11 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
     }else if(action.type==='stop')missionAction='safety-stop';
     else if(action.drillId)details.activityKey=action.drillId;
     if(action.reason)details.reason=action.reason;
-    try{const projected=await requestMissionMutation(mission,missionAction,details);missionRef.current=projected;setMission(projected);}
+    try{const projected=await requestMissionMutation(mission,missionAction,details);let visible=projected;try{if(queueRef.current.length)visible=projectOfflineQueue(projected,queueRef.current) as MissionProjection;}catch{setOfflineStatus('adult-review');}missionRef.current=visible;setMission(visible);}
     catch(requestError){
      if(!(requestError&&typeof requestError==='object'&&'retryable' in requestError&&requestError.retryable===true))throw requestError;
-     const queued=createOfflineMutation(mission,missionAction,details);const nextQueue=enqueueOfflineMutation(queueRef.current,queued);persistOfflineQueue(nextQueue);
-     const optimistic=applyOfflineMutation(mission,queued) as MissionProjection;missionRef.current=optimistic;setMission(optimistic);setOfflineStatus('pending');
+     const queued=createOfflineMutation(mission,missionAction,details);const nextQueue=enqueueOfflineMutation(queueRef.current,queued);const stored=persistOfflineQueue(nextQueue);
+     const optimistic=applyOfflineMutation(mission,queued) as MissionProjection;missionRef.current=optimistic;setMission(optimistic);setOfflineStatus(stored?'pending':'adult-review');
      if(missionAction==='safety-stop')setPlayer(current=>current?{...current,training:{...current.training,safetyStopped:true}}:current);
      return true;
     }
@@ -174,11 +182,11 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
    {error&&<div role="alert" className="tf-error">{error} <button onClick={()=>void load()}>Reload saved progress</button></div>}
    {(tab==='Home'||tab==='Today')&&<>
     <div className="tf-heading"><div><p className="tf-kicker">{profile?.nickname||'GOALIE'} · {path.name}</p><h1>{sessionDone?'That is a session earned.':'Your next save starts here.'}</h1></div><span className="tf-level">Path {path.level}</span></div>
-    {state.safetyStopped?<div className="tf-error"><AlertTriangle/><h2>Training is paused.</h2><p>Tell a parent or guardian what happened. Rest does not erase your progress.</p><button className="tf-secondary" onClick={()=>setTab('Profile')}>Adult review</button></div>:<section className="tf-today"><div className="tf-today-top"><p className="tf-kicker">WEEK {state.week+1} · SESSION {state.day+1}</p><span><Clock size={16}/>{path.minutes} min planned</span></div><h2>{session.title}</h2><p className="tf-session-intro">{sessionDone?'Put the equipment away. Recovery is part of getting better.':`${session.blocks.length-completed} of ${session.blocks.length} drills left. One clear task at a time.`}</p><Progress value={completed/session.blocks.length*100} aria-label="Drills complete"/>
+    {state.safetyStopped?<div className="tf-error"><AlertTriangle/><h2>Training is paused.</h2><p>Tell a parent or guardian what happened. Rest does not erase your progress.</p><button className="tf-secondary" onClick={()=>setTab('Profile')}>Adult review</button></div>:missionAbandoned?<div className="tf-error"><AlertTriangle/><h2>This mission was ended.</h2><p>Your saved work remains in history. Return to an adult before starting another mission.</p><button className="tf-secondary" onClick={()=>setTab('Profile')}>Return to adult</button></div>:<section className="tf-today"><div className="tf-today-top"><p className="tf-kicker">WEEK {state.week+1} · SESSION {state.day+1}</p><span><Clock size={16}/>{path.minutes} min planned</span></div><h2>{session.title}</h2><p className="tf-session-intro">{sessionDone?'Put the equipment away. Recovery is part of getting better.':`${session.blocks.length-completed} of ${session.blocks.length} drills left. One clear task at a time.`}</p><Progress value={completed/session.blocks.length*100} aria-label="Drills complete"/>
      <div className="tf-start-row">{!sessionDone?<button disabled={busy||coach} className="tf-primary" onClick={async()=>{if(playerMode&&['paused','interrupted'].includes(mission?.status||'')){if(!await act({type:'resume'}))return;}navigate(playerMode?'Today':'Home',playerMode?(currentMissionActivity?.key||null):(session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool'));}}><Play size={19} fill="currentColor"/>{todayAction.label}</button>:playerMode?<button className="tf-primary" onClick={()=>navigate('Progress')}>View saved progress <ArrowRight size={18}/></button>:<button className="tf-primary" disabled={busy||coach} onClick={()=>void act({type:'next'})}>{state.week===19&&state.day===path.days-1?'Start another practice cycle':'View next planned session'} <ArrowRight size={18}/></button>}<span>{path.days} days/week · {path.schedule.join(' / ')}</span></div>
     </section>}
-    <section className="tf-day-list" aria-label="Today’s drills">{session.blocks.map((d,i)=>{const execution=playerMode?mission?.activities.find(item=>item.key===d.id):null;const done=playerMode?['completed','skipped'].includes(execution?.status||''):isDrillDone(state,session,d);const locked=Boolean(playerMode&&execution&&execution.ordinal>(mission?.currentActivityIndex??0)&&!done);return <button key={d.id} disabled={locked} onClick={()=>navigate(playerMode?'Today':'Home',d.id)} className="tf-drill-row"><span className={done?'tf-number done':'tf-number'}>{done?<Check size={19}/>:i+1}</span><span><strong>{d.name}</strong><small>{locked?'Finish the activity above first':`${d.sets} ${d.sets===1?'set':'sets'} · ${d.target} · ${d.minutes} min`}</small></span><ChevronRight size={19}/></button>;})}</section>
-    {completed===session.blocks.length&&!sessionDone&&<button className="tf-primary" disabled={busy} onClick={async()=>{if(await act({type:playerMode?'complete-mission':'finish'}))celebrate('Full training session');}}><Trophy size={19}/>{playerMode?'Finish mission':'Finish and earn your session badge'}</button>}
+    <section className="tf-day-list" aria-label="Today’s drills">{session.blocks.map((d,i)=>{const execution=playerMode?mission?.activities.find(item=>item.key===d.id):null;const done=playerMode?['completed','skipped'].includes(execution?.status||''):isDrillDone(state,session,d);const locked=Boolean(missionAbandoned||playerMode&&execution&&execution.ordinal>(mission?.currentActivityIndex??0)&&!done);return <button key={d.id} disabled={locked} onClick={()=>navigate(playerMode?'Today':'Home',d.id)} className="tf-drill-row"><span className={done?'tf-number done':'tf-number'}>{done?<Check size={19}/>:i+1}</span><span><strong>{d.name}</strong><small>{missionAbandoned?'Mission ended—return to an adult':locked?'Finish the activity above first':`${d.sets} ${d.sets===1?'set':'sets'} · ${d.target} · ${d.minutes} min`}</small></span><ChevronRight size={19}/></button>;})}</section>
+    {completed===session.blocks.length&&!sessionDone&&!missionAbandoned&&<button className="tf-primary" disabled={busy} onClick={async()=>{if(await act({type:playerMode?'complete-mission':'finish'}))celebrate('Full training session');}}><Trophy size={19}/>{playerMode?'Finish mission':'Finish and earn your session badge'}</button>}
     {playerMode?<section className="tf-reward"><span className="tf-reward-icon"><Check size={32}/></span><div><p className="tf-kicker">PROGRESS SAVES AS YOU GO</p><h3>{sessionDone?'Mission complete':'Finish every activity with control'}</h3><p>{sessionDone?(mission?.pendingSync?'Mission complete on this device. Connect to confirm it with your adult account.':'Your completed mission is saved. XP and progression are calculated by the next verified system.'):(mission?.pendingSync?'Recent progress is stored on this device until it reconnects.':'Reloading or leaving will not erase confirmed sets.')}</p></div></section>:<section className="tf-reward"><span className="tf-reward-icon"><Trophy size={32}/></span><div><p className="tf-kicker">{state.sessions.length?'EARNED THROUGH TRAINING':'YOUR FIRST REWARD'}</p><h3>{state.sessions.length?`${state.sessions.length} session badges earned`:'The First Save badge'}</h3><p>{state.sessions.length?'Every badge marks a completed session—not time spent in the app.':'Complete every drill and finish the session to earn it.'}</p></div></section>}
     <p className="tf-fine">Planned time includes setup, demonstration, breaks, and reflection. Do not add repetitions to fill time. Other sports count toward your total workload.</p>
    </>}
@@ -228,7 +236,7 @@ export function DrillDetail({drill,state,session,mission,busy,readOnly,act,onDon
   <div className="tf-drill-controls"><div className="tf-set-dots" aria-label={`${setsDone} of ${drill.sets} sets completed`}>{Array.from({length:drill.sets},(_,i)=><span className={i<setsDone?'done':''} key={i}>{i<setsDone?<Check size={16}/>:i+1}</span>)}</div>
    <TrainingSaveError message={saveError} onReload={onReload}/>
    {done?<p><Check/> {execution?.status==='skipped'?'Activity safely substituted.':'Activity complete.'}</p>:state.safetyStopped?<p role="alert">Training paused. Ask an adult to check in.</p>:authoritative?<>{execution?.status==='resting'?<div className="tf-rest"><strong role="timer">{seconds>0?`Rest ${seconds}s`:'Rest complete'}</strong><button disabled={busy||locked||seconds>0} className="tf-primary" onClick={()=>void handleControl()}><Play size={16}/>Continue</button></div>:<button className="tf-primary" disabled={busy||locked||(control?.action==='record-result'&&drill.id==='read'&&readingAnswer===undefined)} onClick={()=>void handleControl()}>{control?.action==='start-activity'?<Play size={18}/>:<Check size={18}/>} {busy?'Saving…':control?.label}</button>}{mission?.status==='in-progress'&&<div className="tf-training-exits"><button className="tf-secondary" disabled={busy||locked} onClick={async()=>{if(await act({type:'pause'}))onExit();}}><Pause size={16}/>Pause and exit</button><button className="tf-link" disabled={busy||locked} onClick={async()=>{if(await act({type:'skip-activity',drillId:drill.id,reason:'safe-substitution'}))onExit();}}>Use a safe substitution</button></div>}</>:seconds>0?<div className="tf-rest"><strong role="timer">Rest {seconds}s</strong><button disabled={busy||readOnly} className="tf-secondary" onClick={()=>void act({type:running?'pause-rest':'resume-rest',drillId:drill.id})}>{running?<Pause size={16}/>:<Play size={16}/>} {running?'Pause':'Resume'}</button></div>:!started?<button className="tf-primary" onClick={()=>setStarted(true)} disabled={readOnly}><Play size={18}/>I understand—start this drill</button>:<button className="tf-primary" disabled={busy||readOnly||(drill.id==='read'&&!legacyAnswer)} onClick={()=>void finishSet()}><Check size={18}/>{busy?'Saving…':`I finished set ${setsDone+1}`}</button>}
-   {!done&&<button className="tf-link tf-stop" disabled={busy||locked} onClick={async()=>{if(await act({type:'stop'}))onExit();}}>Something hurts / stop training</button>}
+   {!done&&<button className="tf-link tf-stop" disabled={locked} onClick={async()=>{if(await act({type:'stop'}))onExit();}}>Something hurts / stop training</button>}
    <p className="tf-fine">Complete the listed work with control. You can rest longer. Never rush to finish a timer.</p>
  </div></>;
 }

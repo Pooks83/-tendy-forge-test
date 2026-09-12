@@ -86,6 +86,8 @@ test('activity mutations preserve rest and result state and replay the same auth
   const earlyRest=await post(mf,'/api/mission',{action:'start-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-rest-early');
   assert.equal(earlyRest.status,409);assert.equal(earlyRest.data.error.code,'INVALID_STATE_TRANSITION');
   result=await post(mf,'/api/mission',{action:'record-result',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key,result:{completedSets:1,usedEasierVersion:false}},'activity-result-1');
+  const mismatchedReplay=await post(mf,'/api/mission',{action:'record-result',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key,result:{completedSets:2,usedEasierVersion:false}},'activity-result-1');
+  assert.equal(mismatchedReplay.status,409);assert.equal(mismatchedReplay.data.error.code,'DUPLICATE_REQUEST');
   result=await post(mf,'/api/mission',{action:'start-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key,remainingSeconds:30},'activity-rest-1');
   assert.equal(result.data.activities[0].status,'resting');
   const tooSoon=await post(mf,'/api/mission',{action:'end-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-rest-too-soon');
@@ -157,6 +159,21 @@ test('pain stop is authoritative and blocks resume until an adult clears the saf
   await db.prepare('UPDATE training_profiles SET state=? WHERE id=?').bind(JSON.stringify({...JSON.parse(profile.state),safetyStopped:false}),profileId).run();
   const resumed=await post(mf,'/api/mission',{action:'resume',missionId:current.missionId,profileContextId:profileId,revision:stopped.data.revision},'safety-resume-cleared');
   assert.equal(resumed.status,200);assert.equal(resumed.data.status,'in-progress');
+ }finally{await mf.dispose();}
+});
+
+test('queued safety stop becomes authoritative once and remains blocked for adult review',async()=>{
+ const {mf,db}=await setup();
+ try{
+  const profileId=await readyPlayer(mf,db);let current=(await post(mf,'/api/mission',{action:'start'},'offline-safety-start')).data;
+  current=(await post(mf,'/api/mission',{action:'start-activity',missionId:current.missionId,profileContextId:profileId,revision:current.revision,activityKey:current.activities[0].key},'offline-safety-activity')).data;
+  const operationKey='offline-safety-stop';const body={action:'safety-stop',missionId:current.missionId,profileContextId:profileId,revision:current.revision,queuedAt:'2026-09-12T00:00:00.000Z',offlineMutationId:operationKey};
+  const stopped=await post(mf,'/api/mission',body,operationKey);assert.equal(stopped.status,200);assert.equal(stopped.data.status,'interrupted');
+  assert.deepEqual((await post(mf,'/api/mission',body,operationKey)).data,stopped.data);
+  const rebasedReplay=await post(mf,'/api/mission',{...body,revision:body.revision+1},operationKey);assert.equal(rebasedReplay.status,200);assert.deepEqual(rebasedReplay.data,stopped.data);
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM audit_events WHERE event_type='MISSION_SAFETY_STOP'").first()).n,1);
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM product_events WHERE logical_key LIKE '%offline-safety-stop'").first()).n,2);
+  const blocked=await post(mf,'/api/mission',{action:'resume',missionId:current.missionId,profileContextId:profileId,revision:stopped.data.revision},'offline-safety-resume');assert.equal(blocked.data.error.code,'SAFETY_STOPPED');
  }finally{await mf.dispose();}
 });
 
