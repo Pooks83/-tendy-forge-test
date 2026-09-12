@@ -7,9 +7,10 @@ const read=async value=>{if(!value.ok)throw new Error(value.data?.error||'failed
 
 test('valid active player loads only the child-safe endpoint',async()=>{
  const calls=[];
- const result=await access.loadInitialAccess(async url=>{calls.push(url);return response(200,{profile:{id:'p1'},training:{}});},read);
- assert.deepEqual(calls,['/api/player']);
+ const result=await access.loadInitialAccess(async url=>{calls.push(url);return response(200,url==='/api/player'?{profile:{id:'p1'},training:{}}:{missionId:'m1',status:'in-progress'});},read);
+ assert.deepEqual(calls,['/api/player','/api/mission']);
  assert.equal(result.kind,'player');
+ assert.equal(result.mission.missionId,'m1');
 });
 
 test('only missing player context may fall back to adult profile loading',async()=>{

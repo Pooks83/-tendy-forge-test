@@ -12,13 +12,16 @@ import {readTrainingResponse} from '@/lib/training-request.mjs';
 import {activeAdultProfileId,buildPlayerViewState,loadInitialAccess} from '@/lib/access-loader.mjs';
 import {completeContextSwitch,contextSwitchOperationKey} from '@/lib/context-switch.mjs';
 import {resolveTodayMissionAction} from '@/lib/today-state.mjs';
+import {missionMutation,resolveMissionActivityControl} from '@/lib/mission-client.mjs';
 import {DrillMap} from './drill-map';
 import {OnboardingFlow} from '@/components/tendie-forge/onboarding-flow';
 import {PlayerFirstValueFlow} from '@/components/tendie-forge/player-first-value';
 type TrainingState=ReturnType<typeof newTrainingState>;
 type Profile={id:string;nickname:string;team:string;ageBand:string;role:'owner'|'coach'|'player';active?:boolean;revision:number;state:TrainingState;grants:string[];catches?:string|null;experience?:string|null;equipment?:string[];plannedDays?:string[];missionMinutes?:number|null;setupStatus?:string};
 type PlayerProjection={profile:{id:string;nickname:string;ageBand:string;catches:string;experience:string;equipment:string[];plannedDays:string[];missionMinutes:number;setupStatus:string;revision:number};training:TrainingState};
-type Action={type:string;drillId?:string;setIndex?:number;answer?:number;skillId?:number;passed?:boolean;note?:string;ratings?:number[];cause?:string};
+type MissionActivity={key:string;ordinal:number;status:string;result:{completedSets?:number;answer?:number;correct?:boolean;usedEasierVersion?:boolean}|null;requiredSets:number;restSeconds:number;restRemainingSeconds:number;restCompletedAfterSet:number};
+type MissionProjection={id?:string;missionId:string;profileContextId:string;status:string;revision:number;currentActivityIndex:number;activities:MissionActivity[];executionSnapshot:ReturnType<typeof buildSession>&{reading?:{question:string;options:string[];answer:number;explanation:string}}};
+type Action={type:string;drillId?:string;setIndex?:number;answer?:number;usedEasierVersion?:boolean;skillId?:number;passed?:boolean;note?:string;ratings?:number[];cause?:string;reason?:string};
 type Drill=ReturnType<typeof buildSession>['blocks'][number];
 const NAV=[['Home',Home],['Train',Dumbbell],['Progress',TrendingUp],['Profile',User]] as const;
 const PLAYER_NAV=[['Today',Home],['Journey',Dumbbell],['Progress',TrendingUp],['Profile',User]] as const;
@@ -35,9 +38,18 @@ async function setPlayerContext(profileId:string,operationKey:string){
  const response=await fetch('/api/player-context',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':operationKey},body:JSON.stringify({profileId})});
  return await readTrainingResponse(response) as PlayerProjection;
 }
-async function startPlayerMission(operationKey:string):Promise<{missionId:string;status:string}>{
+async function startPlayerMission(operationKey:string):Promise<MissionProjection>{
  const response=await fetch('/api/mission',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':operationKey},body:JSON.stringify({action:'start'})});
- return await readTrainingResponse(response) as {missionId:string;status:string};
+ return await readTrainingResponse(response) as MissionProjection;
+}
+async function fetchMissionProjection():Promise<MissionProjection>{
+ const response=await fetch('/api/mission',{cache:'no-store'});
+ return await readTrainingResponse(response) as MissionProjection;
+}
+async function requestMissionMutation(current:MissionProjection,action:string,details:Record<string,unknown>={}):Promise<MissionProjection>{
+ const mutation=missionMutation(current,action,details);
+ const response=await fetch('/api/mission',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':mutation.operationKey},body:JSON.stringify(mutation.body)});
+ return await readTrainingResponse(response) as MissionProjection;
 }
 async function fetchTrainingProfiles():Promise<{mode:'guest'|'signed-in';profiles:Profile[]}> {
  const response=await fetch('/api/training',{cache:'no-store'});
@@ -71,36 +83,53 @@ export function AccessShell({mode,error,signInLink,signOutLink,onPreview,onReloa
 export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signOutLink:ReactNode}){
  const [tab,setTab]=useState('Home');const [profiles,setProfiles]=useState<Profile[]>([]);const [active,setActive]=useState('');
  const [player,setPlayer]=useState<PlayerProjection|null>(null);const [showFirstValue,setShowFirstValue]=useState(false);const [resumeFirstValue,setResumeFirstValue]=useState(false);
- const [activeMissionId,setActiveMissionId]=useState<string|null>(null);
+ const [mission,setMission]=useState<MissionProjection|null>(null);
  const [mode,setMode]=useState<'loading'|'signed-in'|'guest'|'error'>('loading');const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const [preview,setPreview]=useState(false);const [sample,setSample]=useState(newTrainingState);const [selected,setSelected]=useState<string|null>(null);
  const [celebration,setCelebration]=useState('');const busyRef=useRef(false);const dialogRef=useRef<HTMLDivElement>(null);const contextKeysRef=useRef(new Map<string,string>());
  const adultProfile=profiles.find(p=>p.id===active)||profiles[0];
  const profile:Profile|undefined=player?{...player.profile,team:'',role:'player',state:player.training,grants:[]}:adultProfile;
+ const playerMode=Boolean(player);
  const state=preview?sample:player?buildPlayerViewState(player.training,newTrainingState()) as TrainingState:adultProfile?.state||newTrainingState();
- const path=PATHS.find(p=>p.id===state.pathId)!;const session=useMemo(()=>buildSession(state.pathId,state.week,state.day,state.cycle||0),[state.pathId,state.week,state.day,state.cycle]);
+ const path=PATHS.find(p=>p.id===state.pathId)!;const generatedSession=useMemo(()=>buildSession(state.pathId,state.week,state.day,state.cycle||0),[state.pathId,state.week,state.day,state.cycle]);
+ const session=playerMode&&mission?.executionSnapshot?.blocks?.length?mission.executionSnapshot:generatedSession;
  const sessionDrillIds=useMemo(()=>session.blocks.map(item=>item.id),[session]);
- const completed=session.blocks.filter(d=>isDrillDone(state,session,d)).length;
- const todayAction=resolveTodayMissionAction({missionInProgress:activeMissionId===session.id,completedActivities:completed});
- const sessionDone=state.sessions.some((s:{id:string})=>s.id===session.id);
- const playerMode=Boolean(player);const enabled=preview||Boolean(profile);const drillId=resolveTrainingDrill(enabled&&!showFirstValue,selected,sessionDrillIds);
+ const completed=playerMode&&mission?mission.activities.filter(item=>['completed','skipped'].includes(item.status)).length:session.blocks.filter(d=>isDrillDone(state,session,d)).length;
+ const todayAction=resolveTodayMissionAction({missionInProgress:['in-progress','paused','interrupted'].includes(mission?.status||''),completedActivities:completed});
+ const sessionDone=playerMode?mission?.status==='completed':state.sessions.some((s:{id:string})=>s.id===session.id);
+ const enabled=preview||Boolean(profile);const drillId=resolveTrainingDrill(enabled&&!showFirstValue,selected,sessionDrillIds);
  const drill=session.blocks.find(d=>d.id===drillId);const coach=profile?.role==='coach'&&!preview;
+ const currentMissionActivity=playerMode?mission?.activities[mission.currentActivityIndex]:null;
  const skillChecks=state.checks as Array<{group:string;pathId:string;passed:boolean;date:string;skillId?:number}>;
  const navigate=useCallback((view:string,drillId:string|null=null,replace=false)=>{setTab(view);setSelected(drillId);if(typeof window!=='undefined'){const url=trainingLocation({view,drill:drillId});window.history[replace?'replaceState':'pushState']({},'',url);}},[]);
  const loadAdult=useCallback(async()=>{
   try{const result=await fetchTrainingProfiles();setProfiles(result.profiles);setActive(activeAdultProfileId(result.profiles));setMode(result.mode);setError('');}
   catch(e){setError(e instanceof Error?e.message:'Cannot load training');setMode('error');}
  },[]);
- const loadPlayer=useCallback(async()=>{try{const result=await fetchPlayerProjection();if(result){setPlayer(result);setProfiles([]);setMode('signed-in');setError('');}return result;}catch(e){setError(e instanceof Error?e.message:'Cannot load your goalie');return null;}},[]);
+ const loadPlayer=useCallback(async()=>{try{const result=await fetchPlayerProjection();if(result){const currentMission=await fetchMissionProjection();setPlayer(result);setMission(currentMission);setProfiles([]);setMode('signed-in');setError('');}return result;}catch(e){setError(e instanceof Error?e.message:'Cannot load your goalie');return null;}},[]);
  const load=useCallback(async()=>{if(player)await loadPlayer();else await loadAdult();},[player,loadPlayer,loadAdult]);
- useEffect(()=>{let current=true;void loadInitialAccess(fetch,readTrainingResponse).then(result=>{if(!current)return;if(result.kind==='player'){setPlayer(result.player as PlayerProjection);setProfiles([]);setMode('signed-in');setResumeFirstValue(true);setShowFirstValue(true);}else if(result.kind==='adult'){const adultProfiles=result.profiles as Profile[];setProfiles(adultProfiles);setActive(activeAdultProfileId(adultProfiles));setMode('signed-in');}else{setMode('guest');setProfiles([]);}setError('');}).catch(e=>{if(!current)return;setError(e instanceof Error?e.message:'Cannot load training');setMode('error');});return()=>{current=false;};},[]);
+ useEffect(()=>{let current=true;void loadInitialAccess(fetch,readTrainingResponse).then(result=>{if(!current)return;if(result.kind==='player'){setPlayer(result.player as PlayerProjection);setMission(result.mission as MissionProjection);setProfiles([]);setMode('signed-in');setResumeFirstValue(true);setShowFirstValue(true);}else if(result.kind==='adult'){const adultProfiles=result.profiles as Profile[];setProfiles(adultProfiles);setActive(activeAdultProfileId(adultProfiles));setMode('signed-in');}else{setMode('guest');setProfiles([]);}setError('');}).catch(e=>{if(!current)return;setError(e instanceof Error?e.message:'Cannot load training');setMode('error');});return()=>{current=false;};},[]);
  useEffect(()=>{const sync=()=>{const next=parseTrainingLocation(window.location.search,sessionDrillIds,playerMode?'player':'adult');setTab(next.view);setSelected(next.drill);};sync();window.addEventListener('popstate',sync);return()=>window.removeEventListener('popstate',sync);},[sessionDrillIds,playerMode]);
  async function act(action:Action){
   if(busyRef.current)return false;busyRef.current=true;setBusy(true);setError('');
   try{
    if(preview){setSample(applyAction(sample,action,{role:'owner',id:'preview-adult'}));return true;}
    if(!profile)throw new Error('An adult must set up a profile first.');
-   if(playerMode){const operationKey=['player',profile.id,profile.revision,action.type,action.drillId??'',action.setIndex??'',action.answer??''].join(':');const projected=await requestPlayerAction({revision:profile.revision,action},operationKey);setPlayer(projected);return true;}
+   if(playerMode){
+    if(action.type==='stop'&&(!mission||!['in-progress','paused'].includes(mission.status))){const operationKey=['player',profile.id,profile.revision,'stop'].join(':');const projected=await requestPlayerAction({revision:profile.revision,action},operationKey);setPlayer(projected);return true;}
+    if(!mission)throw new Error('Your mission could not be loaded. Reload saved progress.');
+    const activity=mission.activities[mission.currentActivityIndex];
+    let missionAction=action.type;const details:Record<string,unknown>={};
+    if(action.type==='set'){
+     if(!activity||activity.key!==action.drillId)throw new Error('Return to your current activity.');
+     missionAction='record-result';details.activityKey=activity.key;details.completedSets=Number(activity.result?.completedSets||0)+1;details.usedEasierVersion=action.usedEasierVersion===true;if(Number.isInteger(action.answer))details.answer=action.answer;
+    }else if(action.type==='stop')missionAction='safety-stop';
+    else if(action.drillId)details.activityKey=action.drillId;
+    if(action.reason)details.reason=action.reason;
+    const projected=await requestMissionMutation(mission,missionAction,details);setMission(projected);
+    if(['safety-stop','complete-mission'].includes(missionAction)){const refreshed=await fetchPlayerProjection();if(refreshed)setPlayer(refreshed);}
+    return true;
+   }
    const result=await request({type:'action',profileId:profile.id,revision:profile.revision,action});
    setProfiles(items=>items.map(p=>p.id===profile.id?{...p,state:result.state,revision:result.revision}:p));return true;
   }catch(e){setError(e instanceof Error?e.message:'Save failed');return false;}finally{busyRef.current=false;setBusy(false);}
@@ -109,7 +138,7 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
  useEffect(()=>{if(!celebration)return;const timer=setTimeout(()=>setCelebration(''),2800);return()=>clearTimeout(timer);},[celebration]);
  if(adultProfile?.role==='owner'&&adultProfile.setupStatus==='legacy-review-required')return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><p className="tf-kicker">SETUP REVIEW</p><h1>Keep the progress. Complete the missing setup.</h1><p>Your saved sessions and coach access stay attached to the same goalie profile.</p><OnboardingFlow initialStep="parent-permission" legacyProfile={adultProfile} signOutLink={signOutLink} onHandoff={async()=>{const projected=await loadPlayer();if(projected){setResumeFirstValue(false);setShowFirstValue(true);}}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
  if(!enabled)return <AccessShell mode={mode} error={error} signInLink={signInLink} signOutLink={signOutLink} onPreview={()=>setPreview(true)} onReload={()=>void loadAdult()} onCreated={async()=>{const projected=await loadPlayer();if(projected){setResumeFirstValue(false);setShowFirstValue(true);}}}/>;
- if(player&&showFirstValue)return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><PlayerFirstValueFlow player={player} resume={resumeFirstValue} onStartMission={async(operationKey,alreadyStarted)=>{const missionId=alreadyStarted?session.id:(await startPlayerMission(operationKey)).missionId;setActiveMissionId(missionId);setShowFirstValue(false);navigate('Today',session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool');}} onStop={()=>act({type:'stop'})} onParent={async()=>{await loadAdult();setPlayer(null);setActiveMissionId(null);setShowFirstValue(false);}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
+ if(player&&showFirstValue)return <main className="tf-app tf-access-app"><header className="tf-header tf-access-header"><Brand/><span className="tf-office">At home · Off ice</span></header><section className="tf-access-main"><PlayerFirstValueFlow player={player} resume={resumeFirstValue} onStartMission={async(operationKey,alreadyStarted)=>{const currentMission=alreadyStarted?await fetchMissionProjection():await startPlayerMission(operationKey);setMission(currentMission);setShowFirstValue(false);const next=currentMission.activities[currentMission.currentActivityIndex]?.key;navigate('Today',next||null);}} onStop={()=>act({type:'stop'})} onParent={async()=>{await loadAdult();setPlayer(null);setMission(null);setShowFirstValue(false);}}/></section><footer className="tf-footer">Tendie Forge · At-home, off-ice development · Adult managed</footer></main>;
  return <main className="tf-app">
   <a className="tf-skip" href="#training-main">Skip to training</a>
   <header className="tf-header"><Brand onHome={()=>navigate(playerMode?'Today':'Home')}/><div className="tf-header-end"><span className="tf-office">At home · Off ice</span>{profile&&!playerMode&&<span className="tf-adult-label">{coach?'Coach view':'Adult managed'}</span>}<button className="tf-avatar" onClick={()=>navigate('Profile')} aria-label={playerMode?'Open goalie profile':coach?'Open coach workspace':'Open profile and adult tools'}>{profile?.nickname?.slice(0,1)||'G'}</button></div></header>
@@ -120,11 +149,11 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
    {(tab==='Home'||tab==='Today')&&<>
     <div className="tf-heading"><div><p className="tf-kicker">{profile?.nickname||'GOALIE'} · {path.name}</p><h1>{sessionDone?'That is a session earned.':'Your next save starts here.'}</h1></div><span className="tf-level">Path {path.level}</span></div>
     {state.safetyStopped?<div className="tf-error"><AlertTriangle/><h2>Training is paused.</h2><p>Tell a parent or guardian what happened. Rest does not erase your progress.</p><button className="tf-secondary" onClick={()=>setTab('Profile')}>Adult review</button></div>:<section className="tf-today"><div className="tf-today-top"><p className="tf-kicker">WEEK {state.week+1} · SESSION {state.day+1}</p><span><Clock size={16}/>{path.minutes} min planned</span></div><h2>{session.title}</h2><p className="tf-session-intro">{sessionDone?'Put the equipment away. Recovery is part of getting better.':`${session.blocks.length-completed} of ${session.blocks.length} drills left. One clear task at a time.`}</p><Progress value={completed/session.blocks.length*100} aria-label="Drills complete"/>
-     <div className="tf-start-row">{!sessionDone?<button disabled={busy||coach} className="tf-primary" onClick={()=>navigate(playerMode?'Today':'Home',session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool')}><Play size={19} fill="currentColor"/>{todayAction.label}</button>:<button className="tf-primary" disabled={busy||coach} onClick={()=>void act({type:'next'})}>{state.week===19&&state.day===path.days-1?'Start another practice cycle':'View next planned session'} <ArrowRight size={18}/></button>}<span>{path.days} days/week · {path.schedule.join(' / ')}</span></div>
+     <div className="tf-start-row">{!sessionDone?<button disabled={busy||coach} className="tf-primary" onClick={async()=>{if(playerMode&&['paused','interrupted'].includes(mission?.status||'')){if(!await act({type:'resume'}))return;}navigate(playerMode?'Today':'Home',playerMode?(currentMissionActivity?.key||null):(session.blocks.find(d=>!isDrillDone(state,session,d))?.id||'cool'));}}><Play size={19} fill="currentColor"/>{todayAction.label}</button>:playerMode?<button className="tf-primary" onClick={()=>navigate('Progress')}>View saved progress <ArrowRight size={18}/></button>:<button className="tf-primary" disabled={busy||coach} onClick={()=>void act({type:'next'})}>{state.week===19&&state.day===path.days-1?'Start another practice cycle':'View next planned session'} <ArrowRight size={18}/></button>}<span>{path.days} days/week · {path.schedule.join(' / ')}</span></div>
     </section>}
-    <section className="tf-day-list" aria-label="Today’s drills">{session.blocks.map((d,i)=><button key={d.id} onClick={()=>navigate(playerMode?'Today':'Home',d.id)} className="tf-drill-row"><span className={isDrillDone(state,session,d)?'tf-number done':'tf-number'}>{isDrillDone(state,session,d)?<Check size={19}/>:i+1}</span><span><strong>{d.name}</strong><small>{d.sets} {d.sets===1?'set':'sets'} · {d.target} · {d.minutes} min</small></span><ChevronRight size={19}/></button>)}</section>
-    {completed===session.blocks.length&&!sessionDone&&<button className="tf-primary" disabled={busy} onClick={async()=>{if(await act({type:'finish'}))celebrate('Full training session');}}><Trophy size={19}/>Finish and earn your session badge</button>}
-    <section className="tf-reward"><span className="tf-reward-icon"><Trophy size={32}/></span><div><p className="tf-kicker">{state.sessions.length?'EARNED THROUGH TRAINING':'YOUR FIRST REWARD'}</p><h3>{state.sessions.length?`${state.sessions.length} session badges earned`:'The First Save badge'}</h3><p>{state.sessions.length?'Every badge marks a completed session—not time spent in the app.':'Complete every drill and finish the session to earn it.'}</p></div></section>
+    <section className="tf-day-list" aria-label="Today’s drills">{session.blocks.map((d,i)=>{const execution=playerMode?mission?.activities.find(item=>item.key===d.id):null;const done=playerMode?['completed','skipped'].includes(execution?.status||''):isDrillDone(state,session,d);const locked=Boolean(playerMode&&execution&&execution.ordinal>(mission?.currentActivityIndex??0)&&!done);return <button key={d.id} disabled={locked} onClick={()=>navigate(playerMode?'Today':'Home',d.id)} className="tf-drill-row"><span className={done?'tf-number done':'tf-number'}>{done?<Check size={19}/>:i+1}</span><span><strong>{d.name}</strong><small>{locked?'Finish the activity above first':`${d.sets} ${d.sets===1?'set':'sets'} · ${d.target} · ${d.minutes} min`}</small></span><ChevronRight size={19}/></button>;})}</section>
+    {completed===session.blocks.length&&!sessionDone&&<button className="tf-primary" disabled={busy} onClick={async()=>{if(await act({type:playerMode?'complete-mission':'finish'}))celebrate('Full training session');}}><Trophy size={19}/>{playerMode?'Finish mission':'Finish and earn your session badge'}</button>}
+    {playerMode?<section className="tf-reward"><span className="tf-reward-icon"><Check size={32}/></span><div><p className="tf-kicker">PROGRESS SAVES AS YOU GO</p><h3>{sessionDone?'Mission complete':'Finish every activity with control'}</h3><p>{sessionDone?'Your completed mission is saved. XP and progression are calculated by the next verified system.':'Reloading or leaving will not erase confirmed sets.'}</p></div></section>:<section className="tf-reward"><span className="tf-reward-icon"><Trophy size={32}/></span><div><p className="tf-kicker">{state.sessions.length?'EARNED THROUGH TRAINING':'YOUR FIRST REWARD'}</p><h3>{state.sessions.length?`${state.sessions.length} session badges earned`:'The First Save badge'}</h3><p>{state.sessions.length?'Every badge marks a completed session—not time spent in the app.':'Complete every drill and finish the session to earn it.'}</p></div></section>}
     <p className="tf-fine">Planned time includes setup, demonstration, breaks, and reflection. Do not add repetitions to fill time. Other sports count toward your total workload.</p>
    </>}
    {(tab==='Train'||tab==='Journey')&&<><div className="tf-heading"><div><p className="tf-kicker">20 WEEKS · OFF-ICE ONLY</p><h1>Your development path</h1></div></div><section className="tf-path-intro"><h2>{path.name}</h2><p>{path.description}</p><strong>{path.days} days × {path.minutes} minutes each week</strong><p>Keep this commitment throughout the path. Advancing requires skill checks—not finishing weeks. Take rest days between demanding sessions.</p></section><div className="tf-weeks">{WEEKS.map((w,i)=><article key={w.number} className={i===state.week?'current':''}><span className="tf-number">{w.number}</span><div><h3>{w.name}</h3><p>{w.skills.map(id=>SKILLS.find(s=>s.id===id)?.name).join(' · ')}</p></div><span>{i===state.week?'Current':i<state.week?'Covered':'Coming up'}</span></article>)}</div></>}
@@ -132,31 +161,44 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
    {tab==='Profile'&&(playerMode?<PlayerProfilePanel profile={profile} state={state} onParent={async()=>{await loadAdult();setPlayer(null);setShowFirstValue(false);}}/>:<ProfilePanel key={preview?'preview':profile?.id} profile={profile} preview={preview} profiles={profiles} active={active} onSwitch={async id=>{const chosen=profiles.find(item=>item.id===id);if(chosen?.role!=='owner'){setActive(id);return;}const key=contextSwitchOperationKey(contextKeysRef.current,id);try{await setPlayerContext(id,key);completeContextSwitch(contextKeysRef.current,id);setActive(id);setError('');}catch(error){setError(error instanceof Error?error.message:'Goalie was not changed. Try again.');}}} onChildHandoff={async()=>{const projected=await loadPlayer();if(projected){setResumeFirstValue(false);setShowFirstValue(true);}}} state={state} busy={busy} act={act} reload={loadAdult} onError={setError} signOutLink={signOutLink}/>)}
   </section></div>
   <footer className="tf-footer">SCS Saints Goalie Forge · At-home, off-ice development · Adult managed</footer>
-  <Dialog open={Boolean(drill)} onOpenChange={open=>{if(!open)navigate(tab,null,true);}}><DialogContent ref={dialogRef} tabIndex={-1} onOpenAutoFocus={e=>{e.preventDefault();dialogRef.current?.focus();}} className="tf-dialog">{drill&&<DrillDetail key={`${session.id}:${drill.id}`} drill={drill} state={state} session={session} busy={busy} readOnly={coach} act={act} saveError={error} onReload={()=>void load()} onDone={()=>{celebrate(drill.name);navigate(tab,null,true);}}/>}</DialogContent></Dialog>
+  <Dialog open={Boolean(drill)} onOpenChange={open=>{if(!open)navigate(tab,null,true);}}><DialogContent ref={dialogRef} tabIndex={-1} onOpenAutoFocus={e=>{e.preventDefault();dialogRef.current?.focus();}} className="tf-dialog">{drill&&<DrillDetail key={`${session.id}:${drill.id}`} drill={drill} state={state} session={session} mission={playerMode?mission:null} busy={busy} readOnly={coach} act={act} saveError={error} onReload={()=>void load()} onExit={()=>navigate(tab,null,true)} onDone={()=>{celebrate(drill.name);navigate(tab,null,true);}}/>}</DialogContent></Dialog>
   <Toaster theme="light" position="top-center" richColors/>
   {celebration&&<div className="tf-celebration" aria-hidden="true"><Shield size={40}/><strong>SAVE MADE</strong><span>{celebration}</span></div>}
  </main>;
 }
 export function TrainingSaveError({message,onReload}:{message:string;onReload:()=>void}){return message?<div className="tf-error" role="alert"><p>{message}</p><button className="tf-secondary" onClick={onReload}>Reload saved progress</button><p className="tf-fine">The last action is not confirmed. If something hurts, stop and tell an adult regardless of save status.</p></div>:null;}
-function DrillDetail({drill,state,session,busy,readOnly,act,onDone,saveError,onReload}:{drill:Drill;state:TrainingState;session:ReturnType<typeof buildSession>;busy:boolean;readOnly:boolean;act:(a:Action)=>Promise<boolean>;onDone:()=>void;saveError:string;onReload:()=>void}){
- const [now,setNow]=useState(Date.now);const [easy,setEasy]=useState(false);const [started,setStarted]=useState(false);
- const rest=(state as TrainingState&{rests?:Record<string,{until:number;remaining:number}>}).rests?.[`${session.id}:${drill.id}`];
- const seconds=rest?rest.remaining||Math.max(0,Math.ceil((rest.until-now)/1000)):0;const running=Boolean(rest&&!rest.remaining&&seconds>0);
- const done=isDrillDone(state,session,drill);const setsDone=Array.from({length:drill.sets},(_,i)=>state.sets[`${session.id}:${drill.id}:${i}`]).filter(Boolean).length;
- const question=WEEKS[session.week];const answer=state.answers[session.id] as {choice:number;correct:boolean}|undefined;
+export function DrillDetail({drill,state,session,mission,busy,readOnly,act,onDone,onExit,saveError,onReload}:{drill:Drill;state:TrainingState;session:ReturnType<typeof buildSession>;mission:MissionProjection|null;busy:boolean;readOnly:boolean;act:(a:Action)=>Promise<boolean>;onDone:()=>void;onExit:()=>void;saveError:string;onReload:()=>void}){
+ const execution=mission?.activities.find(item=>item.key===drill.id);const authoritative=Boolean(mission&&execution);
+ const savedAnswer=authoritative?execution?.result?.answer:undefined;const legacyAnswer=state.answers[session.id] as {choice:number;correct:boolean}|undefined;
+ const [now,setNow]=useState(Date.now);const [easy,setEasy]=useState(execution?.result?.usedEasierVersion===true);const [readingAnswer,setReadingAnswer]=useState<number|undefined>(savedAnswer??legacyAnswer?.choice);const [restDeadline,setRestDeadline]=useState(()=>Date.now()+(execution?.restRemainingSeconds||0)*1000);const [started,setStarted]=useState(false);
+ const legacyRest=(state as TrainingState&{rests?:Record<string,{until:number;remaining:number}>}).rests?.[`${session.id}:${drill.id}`];
+ const seconds=authoritative&&execution?.status==='resting'?Math.max(0,Math.ceil((restDeadline-now)/1000)):legacyRest?legacyRest.remaining||Math.max(0,Math.ceil((legacyRest.until-now)/1000)):0;
+ const running=Boolean(legacyRest&&!legacyRest.remaining&&seconds>0);const done=authoritative?['completed','skipped'].includes(execution?.status||''):isDrillDone(state,session,drill);
+ const setsDone=authoritative?Number(execution?.result?.completedSets||0):Array.from({length:drill.sets},(_,i)=>state.sets[`${session.id}:${drill.id}:${i}`]).filter(Boolean).length;
+ const question=mission?.executionSnapshot.reading||WEEKS[session.week];const answer=authoritative&&execution?.result&&typeof execution.result.answer==='number'?{choice:execution.result.answer,correct:execution.result.correct===true}:legacyAnswer;
+ const locked=readOnly||(authoritative&&execution?.ordinal!==mission?.currentActivityIndex&&!done);const control=authoritative&&mission&&execution?resolveMissionActivityControl({...mission,currentActivityIndex:execution.ordinal}):null;
  useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),500);return()=>clearInterval(t);},[]);
- async function finishSet(){if(await act({type:'set',drillId:drill.id,setIndex:setsDone})){setNow(Date.now());if(setsDone+1===drill.sets)onDone();}}
+ async function finishSet(){if(await act({type:'set',drillId:drill.id,setIndex:setsDone,answer:readingAnswer,usedEasierVersion:easy}))setNow(Date.now());}
+ async function handleControl(){
+  if(!control)return;
+  if(control.action==='start-activity')await act({type:'start-activity',drillId:drill.id});
+  else if(control.action==='record-result')await finishSet();
+  else if(control.action==='start-rest'){if(await act({type:'start-rest',drillId:drill.id}))setRestDeadline(Date.now()+drill.restSeconds*1000);}
+  else if(control.action==='end-rest'&&seconds===0)await act({type:'end-rest',drillId:drill.id});
+  else if(control.action==='complete-activity'&&await act({type:'complete-activity',drillId:drill.id}))onDone();
+  else if(control.action==='resume')await act({type:'resume'});
+ }
  return <><DialogHeader><p className="tf-kicker">{drill.group} · OFF ICE ONLY</p><DialogTitle>{drill.name}</DialogTitle><DialogDescription>{drill.cue}</DialogDescription></DialogHeader>
   <div className="tf-dose"><div><strong>{drill.sets} {drill.sets===1?'set':'sets'}</strong><span>{drill.target}</span></div><div><strong>{drill.restSeconds}s</strong><span>rest between sets</span></div><div><strong>{drill.minutes} min</strong><span>planned block</span></div></div>
-  {drill.id==='read'?<section className="tf-question"><h3>{question.question}</h3><div>{question.options.map((option,i)=><button key={option} disabled={busy||readOnly||state.safetyStopped} className={answer?.choice===i?'selected':''} onClick={()=>void act({type:'answer',answer:i})}>{String.fromCharCode(65+i)}. {option}</button>)}</div>{answer&&<p role="status"><strong>{answer.correct?'Good read.':'Try this way of thinking: '}</strong> {question.explanation}</p>}</section>:<DrillMap kind={drill.diagram} name={drill.name}/>}
+  {drill.id==='read'?<section className="tf-question"><h3>{question.question}</h3><div>{question.options.map((option,i)=><button key={option} disabled={busy||locked||state.safetyStopped||Boolean(answer)} className={(readingAnswer??answer?.choice)===i?'selected':''} onClick={()=>authoritative?setReadingAnswer(i):void act({type:'answer',answer:i})}>{String.fromCharCode(65+i)}. {option}</button>)}</div>{answer?<p role="status"><strong>{answer.correct?'Good read.':'Try this way of thinking: '}</strong> {question.explanation}</p>:readingAnswer!==undefined&&<p role="status">Answer selected. Finish the activity to check it.</p>}</section>:<DrillMap kind={drill.diagram} name={drill.name}/>}
   <section className="tf-equipment"><div><strong>You need</strong><p>{drill.equipment}</p></div><div><strong>Your space</strong><p>{drill.space}</p></div></section>
   <h3>Set up</h3><p>{drill.setup}</p><h3>Do this</h3><ol className="tf-steps">{drill.steps.map((step:string)=><li key={step}>{step}</li>)}</ol>
   <button className="tf-link" onClick={()=>setEasy(!easy)} aria-expanded={easy}>{easy?'Hide easier version':'Need an easier version?'}</button>{easy&&<p className="tf-easier">{drill.easier}</p>}
   <p className="tf-safety"><AlertTriangle size={18}/>{drill.safety}</p>
   <div className="tf-drill-controls"><div className="tf-set-dots" aria-label={`${setsDone} of ${drill.sets} sets completed`}>{Array.from({length:drill.sets},(_,i)=><span className={i<setsDone?'done':''} key={i}>{i<setsDone?<Check size={16}/>:i+1}</span>)}</div>
    <TrainingSaveError message={saveError} onReload={onReload}/>
-   {done?<p><Check/> Drill already complete.</p>:state.safetyStopped?<p role="alert">Training paused. Ask an adult to check in.</p>:seconds>0?<div className="tf-rest"><strong role="timer">Rest {seconds}s</strong><button disabled={busy||readOnly} className="tf-secondary" onClick={()=>void act({type:running?'pause-rest':'resume-rest',drillId:drill.id})}>{running?<Pause size={16}/>:<Play size={16}/>} {running?'Pause':'Resume'}</button></div>:!started?<button className="tf-primary" onClick={()=>setStarted(true)} disabled={readOnly}><Play size={18}/>I understand—start this drill</button>:<button className="tf-primary" disabled={busy||readOnly||(drill.id==='read'&&!answer)} onClick={()=>void finishSet()}><Check size={18}/>{busy?'Saving…':`I finished set ${setsDone+1}`}</button>}
-   {!done&&<button className="tf-link tf-stop" disabled={busy||readOnly} onClick={()=>void act({type:'stop'})}>Something hurts / stop training</button>}
+   {done?<p><Check/> {execution?.status==='skipped'?'Activity safely substituted.':'Activity complete.'}</p>:state.safetyStopped?<p role="alert">Training paused. Ask an adult to check in.</p>:authoritative?<>{execution?.status==='resting'?<div className="tf-rest"><strong role="timer">{seconds>0?`Rest ${seconds}s`:'Rest complete'}</strong><button disabled={busy||locked||seconds>0} className="tf-primary" onClick={()=>void handleControl()}><Play size={16}/>Continue</button></div>:<button className="tf-primary" disabled={busy||locked||(control?.action==='record-result'&&drill.id==='read'&&readingAnswer===undefined)} onClick={()=>void handleControl()}>{control?.action==='start-activity'?<Play size={18}/>:<Check size={18}/>} {busy?'Saving…':control?.label}</button>}{mission?.status==='in-progress'&&<div className="tf-training-exits"><button className="tf-secondary" disabled={busy||locked} onClick={async()=>{if(await act({type:'pause'}))onExit();}}><Pause size={16}/>Pause and exit</button><button className="tf-link" disabled={busy||locked} onClick={async()=>{if(await act({type:'skip-activity',drillId:drill.id,reason:'safe-substitution'}))onExit();}}>Use a safe substitution</button></div>}</>:seconds>0?<div className="tf-rest"><strong role="timer">Rest {seconds}s</strong><button disabled={busy||readOnly} className="tf-secondary" onClick={()=>void act({type:running?'pause-rest':'resume-rest',drillId:drill.id})}>{running?<Pause size={16}/>:<Play size={16}/>} {running?'Pause':'Resume'}</button></div>:!started?<button className="tf-primary" onClick={()=>setStarted(true)} disabled={readOnly}><Play size={18}/>I understand—start this drill</button>:<button className="tf-primary" disabled={busy||readOnly||(drill.id==='read'&&!legacyAnswer)} onClick={()=>void finishSet()}><Check size={18}/>{busy?'Saving…':`I finished set ${setsDone+1}`}</button>}
+   {!done&&<button className="tf-link tf-stop" disabled={busy||locked} onClick={async()=>{if(await act({type:'stop'}))onExit();}}>Something hurts / stop training</button>}
    <p className="tf-fine">Complete the listed work with control. You can rest longer. Never rush to finish a timer.</p>
  </div></>;
 }

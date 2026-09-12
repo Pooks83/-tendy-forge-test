@@ -62,6 +62,9 @@ test('activity mutations preserve rest and result state and replay the same auth
   result=await post(mf,'/api/mission',{action:'record-result',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key,result:{completedSets:1,usedEasierVersion:false}},'activity-result-1');
   result=await post(mf,'/api/mission',{action:'start-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key,remainingSeconds:30},'activity-rest-1');
   assert.equal(result.data.activities[0].status,'resting');
+  const tooSoon=await post(mf,'/api/mission',{action:'end-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-rest-too-soon');
+  assert.equal(tooSoon.status,409);assert.equal(tooSoon.data.error.code,'INVALID_STATE_TRANSITION');
+  await db.prepare("UPDATE activity_instances SET updated_at=datetime('now','-31 seconds') WHERE mission_instance_id=? AND activity_key=?").bind(result.data.id,activity.key).run();
   result=await post(mf,'/api/mission',{action:'end-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-rest-end-1');
   result=await post(mf,'/api/mission',{action:'record-result',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key,result:{completedSets:2,usedEasierVersion:false}},'activity-result-2');
   const completed=await post(mf,'/api/mission',{action:'complete-activity',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-complete-1');
@@ -115,6 +118,22 @@ test('stale revision, wrong player context, invalid result, and revoked relation
  }finally{await mf.dispose();}
 });
 
+test('pain stop is authoritative and blocks resume until an adult clears the safety flag',async()=>{
+ const {mf,db}=await setup();
+ try{
+  const profileId=await readyPlayer(mf,db);let current=(await post(mf,'/api/mission',{action:'start'},'safety-mission-start')).data;
+  current=(await post(mf,'/api/mission',{action:'start-activity',missionId:current.missionId,profileContextId:profileId,revision:current.revision,activityKey:current.activities[0].key},'safety-activity-start')).data;
+  const stopped=await post(mf,'/api/mission',{action:'safety-stop',missionId:current.missionId,profileContextId:profileId,revision:current.revision},'safety-stop-1');
+  assert.equal(stopped.status,200);assert.equal(stopped.data.status,'interrupted');
+  const profile=await db.prepare('SELECT state FROM training_profiles WHERE id=?').bind(profileId).first();assert.equal(JSON.parse(profile.state).safetyStopped,true);
+  const blocked=await post(mf,'/api/mission',{action:'resume',missionId:current.missionId,profileContextId:profileId,revision:stopped.data.revision},'safety-resume-blocked');
+  assert.equal(blocked.status,409);assert.equal(blocked.data.error.code,'SAFETY_STOPPED');
+  await db.prepare('UPDATE training_profiles SET state=? WHERE id=?').bind(JSON.stringify({...JSON.parse(profile.state),safetyStopped:false}),profileId).run();
+  const resumed=await post(mf,'/api/mission',{action:'resume',missionId:current.missionId,profileContextId:profileId,revision:stopped.data.revision},'safety-resume-cleared');
+  assert.equal(resumed.status,200);assert.equal(resumed.data.status,'in-progress');
+ }finally{await mf.dispose();}
+});
+
 test('every activity can complete once and mission completion is terminal without duplicate event or history',async()=>{
  const {mf,db}=await setup();
  try{
@@ -126,6 +145,7 @@ test('every activity can complete once and mission completion is terminal withou
     current=(await post(mf,'/api/mission',{action:'record-result',missionId:current.missionId,profileContextId:profileId,revision:current.revision,activityKey:activity.key,result:{completedSets:set,...(activity.key==='read'?{answer:0}:{})}},`full-result-${activity.ordinal}-${set}`)).data;
     if(set<activity.requiredSets){
      current=(await post(mf,'/api/mission',{action:'start-rest',missionId:current.missionId,profileContextId:profileId,revision:current.revision,activityKey:activity.key},`full-rest-${activity.ordinal}-${set}`)).data;
+     await db.prepare("UPDATE activity_instances SET updated_at=datetime('now','-120 seconds') WHERE mission_instance_id=? AND activity_key=?").bind(current.id,activity.key).run();
      current=(await post(mf,'/api/mission',{action:'end-rest',missionId:current.missionId,profileContextId:profileId,revision:current.revision,activityKey:activity.key},`full-rest-end-${activity.ordinal}-${set}`)).data;
     }
    }

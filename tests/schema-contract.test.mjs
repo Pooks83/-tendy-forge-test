@@ -37,7 +37,7 @@ test('mission execution is revisioned, versioned, ordered, and independent from 
  assert.ok(indexes.some(index=>index.unique===1),'profile mission key must be unique');
  assert.ok(indexes.some(index=>index.name==='idx_mission_instances_one_active'&&index.unique===1),'only one active mission is allowed per player');
  const activityColumns=db.prepare("PRAGMA table_info('activity_instances')").all().map(row=>row.name);
- assert.deepEqual(activityColumns,['id','mission_instance_id','activity_key','ordinal','status','result_json','rest_remaining_seconds','started_at','completed_at','updated_at']);
+ assert.deepEqual(activityColumns,['id','mission_instance_id','activity_key','ordinal','status','result_json','rest_remaining_seconds','started_at','completed_at','updated_at','rest_completed_after_set']);
  const activityIndexes=db.prepare("PRAGMA index_list('activity_instances')").all();
  assert.ok(activityIndexes.some(index=>index.unique===1),'mission activity ordinal must be unique');
 });

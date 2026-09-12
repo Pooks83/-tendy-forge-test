@@ -31,7 +31,7 @@ export async function POST(request:Request){
    const result=await startCurrentMission(trainingDb(),identity,operationKey);
    return reply(result.data,result.replayed?200:201);
   }
-  const allowed=new Set(['start-activity','record-result','start-rest','end-rest','complete-activity','skip-activity','pause','interrupt','resume','abandon','complete-mission']);
+  const allowed=new Set(['start-activity','record-result','start-rest','end-rest','complete-activity','skip-activity','pause','interrupt','safety-stop','resume','abandon','complete-mission']);
   if(!allowed.has(input.action)||!('missionId' in input)||typeof input.missionId!=='string'||!('profileContextId' in input)||typeof input.profileContextId!=='string'||!('revision' in input)||!Number.isInteger(input.revision))throw canonicalError('INVALID_ACTION','That mission action is not available.',400);
   const result=await mutateCurrentMission(trainingDb(),identity,input as Parameters<typeof mutateCurrentMission>[2],operationKey);
   return reply(result.data);

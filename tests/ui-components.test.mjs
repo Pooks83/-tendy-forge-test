@@ -105,6 +105,20 @@ test('training save feedback exposes the error and reload action, and stays abse
  assert.match(html,/role="alert"/);assert.match(html,/Progress changed on another device/);assert.match(html,/<button/);
  assert.equal(renderToStaticMarkup(React.createElement(TrainingSaveError,{message:'',onReload:()=>{}})),'');
 });
+test('player activity reload renders controls from authoritative mission state',async()=>{
+ const {DrillDetail}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
+ const {Dialog}=await vite.ssrLoadModule('/components/ui/dialog.tsx');
+ const {buildSession,newTrainingState}=await vite.ssrLoadModule('/lib/training.mjs');
+ const session=buildSession('foundation',0,0,0);const drill=session.blocks[0];
+ const base={id:'m1',missionId:session.id,profileContextId:'p1',status:'in-progress',revision:2,currentActivityIndex:0,executionSnapshot:session};
+ const render=activity=>renderToStaticMarkup(React.createElement(Dialog,{open:true},React.createElement(DrillDetail,{drill,state:newTrainingState(),session,mission:{...base,activities:[activity]},busy:false,readOnly:false,act:async()=>true,onDone:()=>{},onExit:()=>{},saveError:'',onReload:()=>{}})));
+ const ready=render({key:drill.id,ordinal:0,status:'ready',result:null,requiredSets:drill.sets,restSeconds:drill.restSeconds,restRemainingSeconds:0,restCompletedAfterSet:0});
+ assert.match(ready,/Start this activity/);assert.match(ready,/Pause and exit/);assert.match(ready,/Use a safe substitution/);assert.doesNotMatch(ready,/I understand—start this drill/);
+ const betweenSets=render({key:drill.id,ordinal:0,status:'in-progress',result:{completedSets:1},requiredSets:drill.sets,restSeconds:drill.restSeconds,restRemainingSeconds:0,restCompletedAfterSet:0});
+ assert.match(betweenSets,/Start 30-second rest/);
+ const resting=render({key:drill.id,ordinal:0,status:'resting',result:{completedSets:1},requiredSets:drill.sets,restSeconds:drill.restSeconds,restRemainingSeconds:20,restCompletedAfterSet:0});
+ assert.match(resting,/Rest 20s/);assert.match(resting,/disabled/);
+});
 test('adult authentication starts from server-rendered top-level links',async()=>{
   const {AdultSignInLink,AdultSignOutLink}=await vite.ssrLoadModule('/components/goalie-forge/auth-links.tsx');
   const signIn=renderToStaticMarkup(React.createElement(AdultSignInLink));

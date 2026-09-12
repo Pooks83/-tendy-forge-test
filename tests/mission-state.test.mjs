@@ -15,8 +15,8 @@ test('mission state machine exposes the canonical lifecycle and immutable execut
  assert.deepEqual(initial,{
   missionId:'mission-1',status:'NOT_STARTED',revision:0,currentActivityIndex:0,contentVersion:'curriculum-v1',
   activities:[
-   {key:'warm',ordinal:0,status:'READY',result:null},
-   {key:'catch',ordinal:1,status:'READY',result:null},
+   {key:'warm',ordinal:0,status:'READY',result:null,restCompletedAfterSet:0},
+   {key:'catch',ordinal:1,status:'READY',result:null,restCompletedAfterSet:0},
   ],
  });
  const active=mission.transitionMission(initial,{type:'START'},at);
@@ -42,6 +42,7 @@ test('activity execution is ordered and requires a structured result before comp
 
 test('rest, pause, interruption, resume, and abandonment follow defined transitions',()=>{
  let state=mission.transitionMission(started(),{type:'START_ACTIVITY',activityKey:'warm'},at);
+ state=mission.transitionMission(state,{type:'RECORD_RESULT',activityKey:'warm',result:{completedSets:1}},at);
  state=mission.transitionMission(state,{type:'START_REST',activityKey:'warm',remainingSeconds:30},at);
  assert.equal(state.activities[0].status,'RESTING');
  state=mission.transitionMission(state,{type:'PAUSE'},at);
@@ -49,8 +50,9 @@ test('rest, pause, interruption, resume, and abandonment follow defined transiti
  state=mission.transitionMission(state,{type:'RESUME'},at);
  assert.equal(state.status,'IN_PROGRESS');
  assert.equal(state.activities[0].status,'RESTING');
- state=mission.transitionMission(state,{type:'END_REST',activityKey:'warm'},at);
- assert.equal(state.activities[0].status,'IN_PROGRESS');
+  state=mission.transitionMission(state,{type:'END_REST',activityKey:'warm'},at);
+  assert.equal(state.activities[0].status,'IN_PROGRESS');
+  assert.equal(state.activities[0].restCompletedAfterSet,1);
  state=mission.transitionMission(state,{type:'INTERRUPT',reason:'app-closed'},at);
  assert.equal(state.status,'INTERRUPTED');
  state=mission.transitionMission(state,{type:'RESUME'},at);
@@ -81,6 +83,13 @@ test('a controlled skip records a reason and still permits mission completion',(
  assert.equal(state.activities[0].result.reason,'safe-substitution');
  assert.equal(mission.transitionMission(state,{type:'COMPLETE_MISSION'},at).status,'COMPLETED');
  assert.throws(()=>mission.transitionMission(started(['warm']),{type:'SKIP_ACTIVITY',activityKey:'warm',reason:'because'},at),error=>error?.code==='INVALID_RESULT');
+});
+
+test('safety stop interrupts an active mission and requires an explicit later resume',()=>{
+ const state=mission.transitionMission(started(['warm']),{type:'SAFETY_STOP'},at);
+ assert.equal(state.status,'INTERRUPTED');assert.equal(state.interruptionReason,'safety-stop');
+ assert.throws(()=>mission.transitionMission(state,{type:'START_ACTIVITY',activityKey:'warm'},at),error=>error?.code==='INVALID_STATE_TRANSITION');
+ assert.equal(mission.transitionMission(state,{type:'RESUME'},at).status,'IN_PROGRESS');
 });
 
 test('Today projection covers ready, active, rest, complete, safety, offline, loading, and recovery',()=>{
