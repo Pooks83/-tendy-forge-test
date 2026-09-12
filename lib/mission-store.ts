@@ -5,7 +5,7 @@ import {readStoredOperation,storeOperationStatement} from './idempotency-store';
 import {productEventStatement} from './product-event-store';
 import {createMissionExecution,transitionMission} from './mission-state.mjs';
 import {GENERATOR_VERSION,generateMission} from './mission-generator.mjs';
-import {findSafetyRetirement,loadPublishedCatalog} from './training-content-store';
+import {findSafetyRetirement,loadPublishedCatalog,resolveSafetyRetirement} from './training-content-store';
 import {buildSession,normalizeTrainingState,WEEKS} from './training.mjs';
 
 export const MISSION_CONTENT_VERSION=GENERATOR_VERSION;
@@ -14,7 +14,7 @@ const LEGACY_CONTENT_VERSION='tf-curriculum-v1';
 type PlayerProjection={profile:{id:string;ageBand:string;equipment:string[];spaces?:string[];missionMinutes:number};training:{pathId:string;week:number;day:number;cycle?:number;safetyStopped?:boolean;sessions?:Array<{id:string}>}};
 type Session=ReturnType<typeof buildSession>;
 type GeneratedSession=Session&{contentVersion?:string;generatorExplanation?:Record<string,unknown>;missionSource?:string;priorityIds?:string[]};
-type PlannedActivity={activityId:string;version:number;name:string;technicalSkillIds:number[];attributeIds:string[];movementTags:string[];prescription:{rounds:number;repsOrTime:string;restSeconds:number;estimatedMinutes:number};equipment:string[];space:string[];setup:string;startingPosition:string;movementSteps:string[];primaryCues:string[];commonMistake:string;easierVersion:string;harderVersion:string;safetyConsiderations:string[];painStopRule:string;visualAssetId:string;caption:string;altText:string;substitution:Record<string,unknown>|null};
+type PlannedActivity={activityId:string;version:number;familyId:string;name:string;technicalSkillIds:number[];attributeIds:string[];movementTags:string[];prescription:{rounds:number;repsOrTime:string;restSeconds:number;estimatedMinutes:number};equipment:string[];space:string[];setup:string;startingPosition:string;movementSteps:string[];primaryCues:string[];commonMistake:string;easierVersion:string;harderVersion:string;safetyConsiderations:string[];painStopRule:string;visualAssetId:string;caption:string;altText:string;substitution:Record<string,unknown>|null};
 type PlannedMission={missionId:string;version:string;source:string;objective?:{childCue?:string};priorityIds:string[];durationMinutes:number;explanation:Record<string,unknown>;orderedActivityVersions:PlannedActivity[]};
 type ExecutionSnapshot=GeneratedSession&{reading?:{question:string;options:string[];answer:number;explanation:string}};
 type MissionRow={id:string;profile_id:string;mission_key:string;status:string;started_at:string;completed_at:string|null;updated_at:string;revision:number;current_activity_index:number;content_version:string;execution_snapshot_json:string;paused_at:string|null;interrupted_at:string|null;abandoned_at:string|null};
@@ -32,13 +32,26 @@ const parseJson=<T>(value:string|null,fallback:T):T=>{try{return value?JSON.pars
 const snapshotFor=(session:GeneratedSession):ExecutionSnapshot=>{if(session.generatorExplanation)return {...session};const reading=WEEKS[session.week];return {...session,reading:{question:reading.question,options:[...reading.options],answer:reading.answer,explanation:reading.explanation}};};
 
 const legacySession=(player:PlayerProjection)=>buildSession(player.training.pathId,player.training.week,player.training.day,player.training.cycle||0);
+const safetyEligibility=(player:PlayerProjection)=>({ageBand:player.profile.ageBand,level:({foundation:1,builder:2,performance:3} as Record<string,number>)[player.training.pathId]||1,equipment:player.profile.equipment||[],spaces:player.profile.spaces||[],physicalRestrictions:[],safetyStopped:player.training.safetyStopped===true,workload:{status:'ready',maxActivityMinutes:10},objective:null,requiredInputs:[]});
 function generatedSession(plan:PlannedMission):GeneratedSession{
  const [pathId,week,day]=String(plan.missionId).split(':');
- return {id:plan.missionId,pathId,week:Number(week),day:Number(day),title:plan.objective?.childCue||'Today’s mission',minutes:plan.durationMinutes,contentVersion:plan.version,missionSource:plan.source,priorityIds:plan.priorityIds,generatorExplanation:plan.explanation,blocks:plan.orderedActivityVersions.map(item=>({id:item.activityId,activityId:item.activityId,version:item.version,name:item.name,group:item.attributeIds[0]||'DEVELOP',equipment:item.equipment.join(', ')||'None',equipmentIds:item.equipment,space:item.space.join(', ')||'Adult-confirmed clear area',spaceIds:item.space,sets:item.prescription.rounds,target:item.prescription.repsOrTime,restSeconds:item.prescription.restSeconds,setup:item.setup,startingPosition:item.startingPosition,steps:item.movementSteps,cue:item.primaryCues.join(' '),primaryCues:item.primaryCues,commonMistake:item.commonMistake,easier:item.easierVersion,harder:item.harderVersion,safety:item.safetyConsiderations.join(' '),painStopRule:item.painStopRule,visualAssetId:item.visualAssetId,caption:item.caption,altText:item.altText,minutes:item.prescription.estimatedMinutes,lowImpact:item.movementTags.includes('recovery')||item.movementTags.includes('seated'),skills:item.technicalSkillIds,substitution:item.substitution,offIce:true}))} as unknown as GeneratedSession;
+ return {id:plan.missionId,pathId,week:Number(week),day:Number(day),title:plan.objective?.childCue||'Today’s mission',minutes:plan.durationMinutes,contentVersion:plan.version,missionSource:plan.source,priorityIds:plan.priorityIds,generatorExplanation:plan.explanation,blocks:plan.orderedActivityVersions.map(item=>({id:item.activityId,activityId:item.activityId,version:item.version,familyId:item.familyId,name:item.name,group:item.attributeIds[0]||'DEVELOP',equipment:item.equipment.join(', ')||'None',equipmentIds:item.equipment,space:item.space.join(', ')||'Adult-confirmed clear area',spaceIds:item.space,sets:item.prescription.rounds,target:item.prescription.repsOrTime,restSeconds:item.prescription.restSeconds,setup:item.setup,startingPosition:item.startingPosition,steps:item.movementSteps,cue:item.primaryCues.join(' '),primaryCues:item.primaryCues,commonMistake:item.commonMistake,easier:item.easierVersion,harder:item.harderVersion,safety:item.safetyConsiderations.join(' '),painStopRule:item.painStopRule,visualAssetId:item.visualAssetId,caption:item.caption,altText:item.altText,minutes:item.prescription.estimatedMinutes,lowImpact:item.movementTags.includes('recovery')||item.movementTags.includes('seated'),skills:item.technicalSkillIds,substitution:item.substitution,offIce:true}))} as unknown as GeneratedSession;
+}
+
+function replacementBlock(activityKey:string,activity:any,evaluation:any){
+ const prescription=evaluation.prescription;const substitution=evaluation.substitution;
+ return {id:activityKey,activityId:activity.activityId,version:activity.version,familyId:activity.familyId,name:activity.name,group:activity.attributeIds[0]||'DEVELOP',equipment:(substitution?.equipment||activity.equipment).join(', ')||'None',equipmentIds:[...(substitution?.equipment||activity.equipment)],space:(substitution?.space||activity.space).join(', ')||'Adult-confirmed clear area',spaceIds:[...(substitution?.space||activity.space)],sets:prescription.rounds,target:prescription.repsOrTime,restSeconds:prescription.restSeconds,setup:substitution?.setup||activity.setup,startingPosition:activity.startingPosition,steps:[...activity.movementSteps],cue:activity.primaryCues.join(' '),primaryCues:[...activity.primaryCues],commonMistake:activity.commonMistake,easier:activity.easierVersion,harder:activity.harderVersion,safety:activity.safetyConsiderations.join(' '),painStopRule:activity.painStopRule,visualAssetId:activity.visualAssetId,caption:activity.caption,altText:activity.altText,minutes:prescription.estimatedMinutes,lowImpact:activity.movementTags.includes('recovery')||activity.movementTags.includes('seated'),skills:[...activity.technicalSkillIds],substitution:substitution?{...substitution}:null,offIce:true};
+}
+
+async function planningHistory(db:D1Database,profileId:string){
+ const rows=await db.prepare("SELECT execution_snapshot_json FROM mission_instances WHERE profile_id=? AND content_version=? AND UPPER(REPLACE(status,'-','_'))='COMPLETED' ORDER BY completed_at DESC LIMIT 20").bind(profileId,MISSION_CONTENT_VERSION).all<{execution_snapshot_json:string}>();
+ const families=rows.results.flatMap(row=>parseJson<{blocks?:Array<{familyId?:string}>}>(row.execution_snapshot_json,{}).blocks||[]).flatMap(block=>block.familyId?[block.familyId]:[]);
+ const counts=new Map<string,number>();for(const familyId of families)counts.set(familyId,(counts.get(familyId)||0)+1);
+ return {coverageHistory:[...counts].map(([familyId,count])=>({familyId,count})),varietyHistory:families.slice(0,8)};
 }
 
 async function planCurrent(db:D1Database,player:PlayerProjection){
- const fallback=legacySession(player);const catalog=await loadPublishedCatalog(db);const plan=generateMission({profileContextId:player.profile.id,planKey:fallback.id,durationMinutes:player.profile.missionMinutes,ageBand:player.profile.ageBand,level:({foundation:1,builder:2,performance:3} as Record<string,number>)[player.training.pathId]||1,equipment:player.profile.equipment||[],spaces:player.profile.spaces||[],physicalRestrictions:[],safetyStopped:player.training.safetyStopped===true,workload:{status:'ready',maxActivityMinutes:10},requiredInputs:[],activePriorities:[],coachFocus:null,dueRetest:null,coverageHistory:[],varietyHistory:player.training.sessions?.slice(-8).map(item=>item.id)||[],catalog,rewardRuleVersion:'tf-reward-v1'});
+ const fallback=legacySession(player);const catalog=await loadPublishedCatalog(db);const history=await planningHistory(db,player.profile.id);const plan=generateMission({profileContextId:player.profile.id,planKey:fallback.id,durationMinutes:player.profile.missionMinutes,ageBand:player.profile.ageBand,level:({foundation:1,builder:2,performance:3} as Record<string,number>)[player.training.pathId]||1,equipment:player.profile.equipment||[],spaces:player.profile.spaces||[],physicalRestrictions:[],safetyStopped:player.training.safetyStopped===true,workload:{status:'ready',maxActivityMinutes:10},requiredInputs:[],activePriorities:[],coachFocus:null,dueRetest:null,...history,catalog,rewardRuleVersion:'tf-reward-v1'});
  if('orderedActivityVersions' in plan){const missionPlan=plan as unknown as PlannedMission;return {kind:'mission' as const,profileId:player.profile.id,missionId:fallback.id,session:generatedSession(missionPlan),plan:missionPlan};}
  return {kind:'unavailable' as const,profileId:player.profile.id,missionId:fallback.id,unavailable:plan};
 }
@@ -70,18 +83,18 @@ function projection(row:MissionRow,activities:ActivityRow[],now=new Date()){
  };
 }
 
-async function safetyHold(db:D1Database,row:MissionRow,activities:ActivityRow[]){
+async function safetyHold(db:D1Database,row:MissionRow,activities:ActivityRow[],player:PlayerProjection){
  const snapshot=parseJson<ExecutionSnapshot>(row.execution_snapshot_json,{blocks:[]} as unknown as ExecutionSnapshot);
  const unfinished=new Set(activities.filter(item=>!['COMPLETED','SKIPPED'].includes(internalStatus(item.status))).map(item=>item.activity_key));
  const references=(snapshot.blocks||[]).filter(block=>unfinished.has(block.id)).flatMap(block=>{
   const value=block as typeof block&{activityId?:string;version?:number};
   return value.activityId&&Number.isInteger(value.version)?[{activityKey:block.id,activityId:value.activityId,version:value.version as number}]:[];
  });
- return findSafetyRetirement(db,references);
+ return findSafetyRetirement(db,references,safetyEligibility(player));
 }
 
-async function safeProjection(db:D1Database,row:MissionRow,activities:ActivityRow[],now=new Date()){
- const projected=projection(row,activities,now);const hold=await safetyHold(db,row,activities);return hold?{...projected,safetyHold:hold}:projected;
+async function safeProjection(db:D1Database,row:MissionRow,activities:ActivityRow[],player:PlayerProjection,now=new Date()){
+ const projected=projection(row,activities,now);const hold=await safetyHold(db,row,activities,player);return hold?{...projected,safetyHold:hold}:projected;
 }
 
 function executionFromRows(row:MissionRow,activities:ActivityRow[],now=new Date()):MissionExecution{
@@ -126,12 +139,12 @@ export async function getCurrentMission(db:D1Database,identity:AdultIdentity){
  const active=await db.prepare(`SELECT ${missionColumns} FROM mission_instances WHERE profile_id=? AND UPPER(REPLACE(status,'-','_')) IN ('IN_PROGRESS','PAUSED','INTERRUPTED') ORDER BY started_at LIMIT 1`).bind(profileId).first<MissionRow>();
  if(active){
   const hydrated=await hydrateLegacyMission(db,identity,active,sessionForMission(active.mission_key,fallback));
-  const activities=await activityRows(db,hydrated.id);return safeProjection(db,hydrated,activities);
+  const activities=await activityRows(db,hydrated.id);return safeProjection(db,hydrated,activities,player);
  }
  const planned=await planCurrent(db,player);
  if(planned.kind==='unavailable')return {missionId:planned.missionId,profileContextId:profileId,status:'unavailable',revision:0,activities:[],executionSnapshot:null,contentVersion:MISSION_CONTENT_VERSION,unavailable:planned.unavailable};
  const loaded=await loadMission(db,identity,profileId,planned.missionId,planned.session);
- return loaded?safeProjection(db,loaded.row,loaded.activities):{missionId:planned.missionId,profileContextId:profileId,status:'not-started',revision:0,activities:[],executionSnapshot:planned.session,contentVersion:MISSION_CONTENT_VERSION};
+ return loaded?safeProjection(db,loaded.row,loaded.activities,player):{missionId:planned.missionId,profileContextId:profileId,status:'not-started',revision:0,activities:[],executionSnapshot:planned.session,contentVersion:MISSION_CONTENT_VERSION};
 }
 
 export async function startCurrentMission(db:D1Database,identity:AdultIdentity,operationKey:string,now=new Date()){
@@ -143,7 +156,7 @@ export async function startCurrentMission(db:D1Database,identity:AdultIdentity,o
  const stored=await readStoredOperation(db,identity.id,operationKey,operation);
  if(stored)return {data:stored,replayed:true};
  const active=await db.prepare(`SELECT ${missionColumns} FROM mission_instances WHERE profile_id=? AND UPPER(REPLACE(status,'-','_')) IN ('IN_PROGRESS','PAUSED','INTERRUPTED') ORDER BY started_at LIMIT 1`).bind(profileId).first<MissionRow>();
- if(active){const hydrated=await hydrateLegacyMission(db,identity,active,sessionForMission(active.mission_key,fallback));const activities=await activityRows(db,hydrated.id);return {data:await safeProjection(db,hydrated,activities),replayed:true};}
+ if(active){const hydrated=await hydrateLegacyMission(db,identity,active,sessionForMission(active.mission_key,fallback));const activities=await activityRows(db,hydrated.id);return {data:await safeProjection(db,hydrated,activities,player),replayed:true};}
  const planned=await planCurrent(db,player);if(planned.kind==='unavailable')throw canonicalError(planned.unavailable.code,planned.unavailable.message,409);
  const {missionId,session}=planned;
  const existing=await loadMission(db,identity,profileId,missionId,session);
@@ -194,6 +207,26 @@ function mutationOperation(profileId:string,input:MutationInput){
  return `mission-action:${profileId}:${JSON.stringify({action:input.action,missionId:input.missionId,profileContextId:input.profileContextId,activityKey:input.activityKey??null,result,reason:input.reason??null,queuedAt:input.queuedAt??null,offlineMutationId:input.offlineMutationId??null})}`;
 }
 
+async function adoptSafetyReplacement(db:D1Database,identity:AdultIdentity,player:PlayerProjection,input:MutationInput,operationKey:string,operation:string,loaded:{row:MissionRow;activities:ActivityRow[]},now:Date){
+ if(input.revision!==loaded.row.revision)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
+ const snapshot=parseJson<ExecutionSnapshot>(loaded.row.execution_snapshot_json,{blocks:[]} as unknown as ExecutionSnapshot);const prior=snapshot.blocks.find(block=>block.id===input.activityKey) as (ExecutionSnapshot['blocks'][number]&{activityId?:string;version?:number})|undefined;
+ if(!prior?.activityId||!Number.isInteger(prior.version))throw canonicalError('REPLACEMENT_UNAVAILABLE','This replacement is no longer available. Ask an adult to review the training plan.',409);
+ const resolved=await resolveSafetyRetirement(db,[{activityKey:prior.id,activityId:prior.activityId,version:prior.version as number}],safetyEligibility(player));
+ if(!resolved?.replacement)throw canonicalError('REPLACEMENT_UNAVAILABLE','This replacement is no longer available. Ask an adult to review the training plan.',409);
+ const target=loaded.activities.find(item=>item.activity_key===input.activityKey);if(!target||['COMPLETED','SKIPPED'].includes(internalStatus(target.status)))throw canonicalError('INVALID_STATE_TRANSITION','Only an unfinished withdrawn activity can be replaced.',409);
+ const replacement=resolved.replacement;const nextSnapshot={...snapshot,blocks:snapshot.blocks.map(block=>block.id===input.activityKey?replacementBlock(block.id,replacement.activity,replacement.evaluation):block)};const timestamp=now.toISOString();const nextRevision=loaded.row.revision+1;
+ const replacementHistory={activityId:prior.activityId,version:prior.version,result:parseJson(target.result_json,null),status:externalStatus(target.status)};const nextActivities=loaded.activities.map(item=>item.id===target.id?{...item,status:'READY',result_json:JSON.stringify({replacementHistory:[replacementHistory]}),rest_remaining_seconds:0,rest_completed_after_set:0,started_at:null,completed_at:null,updated_at:timestamp}:item);const nextRow={...loaded.row,revision:nextRevision,execution_snapshot_json:JSON.stringify(nextSnapshot),updated_at:timestamp};const data=projection(nextRow,nextActivities,now);
+ const metadata=JSON.stringify({missionId:input.missionId,activityKey:input.activityKey,from:{activityId:prior.activityId,version:prior.version},to:{activityId:replacement.activity.activityId,version:replacement.activity.version}});
+ const results=await db.batch([
+  db.prepare('UPDATE mission_instances SET revision=?,execution_snapshot_json=?,updated_at=? WHERE id=? AND revision=?').bind(nextRevision,JSON.stringify(nextSnapshot),timestamp,loaded.row.id,loaded.row.revision),
+  db.prepare('UPDATE activity_instances SET status=?,result_json=?,rest_remaining_seconds=0,rest_completed_after_set=0,started_at=NULL,completed_at=NULL,updated_at=? WHERE id=? AND EXISTS(SELECT 1 FROM mission_instances WHERE id=? AND revision=?)').bind('READY',nextActivities.find(item=>item.id===target.id)?.result_json||null,timestamp,target.id,loaded.row.id,nextRevision),
+  db.prepare('INSERT INTO audit_events(id,actor_account_id,profile_id,event_type,metadata_json,created_at) SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM mission_instances WHERE id=? AND revision=?)').bind(crypto.randomUUID(),identity.id,player.profile.id,'MISSION_SAFETY_REPLACEMENT_ADOPTED',metadata,timestamp,loaded.row.id,nextRevision),
+  db.prepare('INSERT INTO idempotency_records(account_id,operation_key,operation,response_json,created_at) SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM mission_instances WHERE id=? AND revision=?)').bind(identity.id,operationKey,operation,JSON.stringify(data),timestamp,loaded.row.id,nextRevision),
+ ]);
+ if(!results[0].meta.changes||!results[1].meta.changes)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
+ return {data,replayed:false};
+}
+
 function offlineEventStatements(db:D1Database,identity:AdultIdentity,profileId:string,input:MutationInput,timestamp:string,condition:string,conditionBindings:(string|number)[]){
  if(!input.queuedAt||!input.offlineMutationId)return [];
  const queuedSeconds=Math.max(0,Math.floor((Date.parse(timestamp)-Date.parse(input.queuedAt))/1000));
@@ -221,7 +254,8 @@ export async function mutateCurrentMission(db:D1Database,identity:AdultIdentity,
  if(input.profileContextId!==active.profileId)throw canonicalError('PLAYER_CONTEXT_REQUIRED','Return to the goalie this progress belongs to before syncing it.',409);
  const operation=mutationOperation(active.profileId,input);const stored=await readStoredOperation(db,identity.id,operationKey,operation);if(stored)return {data:stored,replayed:true};
  const loaded=await loadMission(db,identity,active.profileId,input.missionId,sessionForMission(input.missionId,active.session));if(!loaded)throw canonicalError('MISSION_NOT_FOUND','Start today’s mission before recording progress.',404);
- const hold=await safetyHold(db,loaded.row,loaded.activities);if(hold)throw canonicalError(hold.code,hold.message,409);
+ if(input.action==='replace-retired-activity')return adoptSafetyReplacement(db,identity,player,input,operationKey,operation,loaded,now);
+ const hold=await safetyHold(db,loaded.row,loaded.activities,player);if(hold)throw canonicalError(hold.code,hold.message,409);
  if(input.revision!==loaded.row.revision)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
  if(active.player.training.safetyStopped&&input.action!=='safety-stop')throw canonicalError('SAFETY_STOPPED','Training is paused. Ask a parent or guardian to check in before continuing.',409);
  const timestamp=now.toISOString();const before=executionFromRows(loaded.row,loaded.activities,now);const snapshot=parseJson<ExecutionSnapshot>(loaded.row.execution_snapshot_json,snapshotFor(active.session));

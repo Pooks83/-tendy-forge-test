@@ -27,6 +27,15 @@ test('mission duration comes from the server profile and supports 25 and 35 minu
  for(const [minutes,count] of [[25,4],[35,5]]){const {mf}=await setup({minutes});try{const started=await post(mf,'/api/mission',{action:'start',missionMinutes:15,equipment:[],spaces:[]},`generated-${minutes}`);assert.equal(started.status,201);assert.equal(started.data.executionSnapshot.minutes,minutes);assert.equal(started.data.activities.length,count);}finally{await mf.dispose();}}
 });
 
+test('completed mission history drives undertrained coverage and variety for the next plan',async()=>{
+ const {mf,db,profileId}=await setup();try{
+  const first=await post(mf,'/api/mission',{action:'start'},'history-first');const firstFamilies=first.data.executionSnapshot.blocks.map(item=>item.familyId);
+  await db.prepare("UPDATE mission_instances SET status='COMPLETED',completed_at=?,updated_at=? WHERE id=?").bind('2026-09-12T03:00:00.000Z','2026-09-12T03:00:00.000Z',first.data.id).run();
+  const profile=await db.prepare('SELECT state FROM training_profiles WHERE id=?').bind(profileId).first();await db.prepare('UPDATE training_profiles SET state=? WHERE id=?').bind(JSON.stringify({...JSON.parse(profile.state),day:1}),profileId).run();
+  const next=await get(mf);const nextFamilies=next.data.executionSnapshot.blocks.map(item=>item.familyId);assert.equal(next.data.missionId,'foundation:0:1');assert.equal(nextFamilies.some(item=>firstFamilies.includes(item)),false,JSON.stringify({firstFamilies,nextFamilies}));
+ }finally{await mf.dispose();}
+});
+
 test('missing reviewed content or explicit space returns one safe adult action',async()=>{
  const noContent=await setup({seed:false});try{const ready=await get(noContent.mf);assert.equal(ready.data.status,'unavailable');assert.equal(ready.data.unavailable.code,'CONTENT_REVIEW_REQUIRED');assert.equal(ready.data.unavailable.nextAction,'adult-content-review');}finally{await noContent.mf.dispose();}
  const noSpace=await setup({spaces:[]});try{const ready=await get(noSpace.mf);assert.equal(ready.data.status,'unavailable');assert.equal(ready.data.unavailable.code,'NO_SAFE_MISSION');assert.equal(ready.data.unavailable.nextAction,'adult-plan-review');}finally{await noSpace.mf.dispose();}
@@ -36,15 +45,31 @@ test('ordinary catalog changes never rewrite an already started mission snapshot
  const {mf,db}=await setup();try{const started=await post(mf,'/api/mission',{action:'start'},'snapshot-start');const snapshot=started.data.executionSnapshot;const first=snapshot.blocks[0];await db.prepare("UPDATE activity_versions SET content_status='RETIRED',retired_at=?,retirement_reason=? WHERE activity_id=? AND version=?").bind('2026-09-12T01:00:00.000Z','ordinary catalog retirement',first.activityId,first.version).run();const reloaded=await get(mf);assert.deepEqual(reloaded.data.executionSnapshot,snapshot);}finally{await mf.dispose();}
 });
 
-test('safety retirement blocks unfinished activity and offers a reviewed family replacement',async()=>{
+test('an adult can adopt an eligible reviewed replacement without losing mission progress',async()=>{
  const {mf,db,profileId}=await setup();try{
   const started=await post(mf,'/api/mission',{action:'start'},'safety-retirement-start');const first=started.data.executionSnapshot.blocks[0];
   const source=await db.prepare('SELECT family_id,payload_json FROM activity_versions WHERE activity_id=? AND version=?').bind(first.activityId,first.version).first();
   const replacement={...JSON.parse(source.payload_json),version:2,publishedAt:'2026-09-12T02:00:00.000Z'};
   await db.prepare('INSERT INTO activity_versions(activity_id,version,family_id,payload_json,content_status,development_reviewer_id,development_reviewed_at,safety_reviewer_id,safety_reviewed_at,published_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(first.activityId,2,source.family_id,JSON.stringify(replacement),'PUBLISHED','development-fixture','2026-09-12T02:00:00.000Z','safety-fixture','2026-09-12T02:00:00.000Z','2026-09-12T02:00:00.000Z','2026-09-12T02:00:00.000Z').run();
+  await db.prepare("UPDATE activity_instances SET status='IN_PROGRESS',result_json=? WHERE mission_instance_id=? AND activity_key=?").bind('{"completedSets":1}',started.data.id,first.id).run();
   await db.prepare("UPDATE activity_versions SET content_status='RETIRED',retired_at=?,retirement_reason=? WHERE activity_id=? AND version=?").bind('2026-09-12T02:00:00.000Z','SAFETY: reviewer withdrawal',first.activityId,first.version).run();
   const held=await get(mf);assert.equal(held.data.safetyHold.code,'CONTENT_RETIRED_SAFETY');assert.equal(held.data.safetyHold.activityKey,first.id);assert.deepEqual(held.data.safetyHold.replacement,{activityId:first.activityId,version:2,name:first.name});
   const blocked=await post(mf,'/api/mission',{action:'start-activity',missionId:started.data.missionId,profileContextId:profileId,revision:started.data.revision,activityKey:first.id},'safety-retirement-blocked');assert.equal(blocked.status,409);assert.equal(blocked.data.error.code,'CONTENT_RETIRED_SAFETY');
-  assert.equal((await db.prepare("SELECT count(*) AS n FROM activity_instances WHERE mission_instance_id=? AND status!='READY'").bind(started.data.id).first()).n,0);
+  assert.deepEqual(await db.prepare("SELECT status,result_json FROM activity_instances WHERE mission_instance_id=? AND activity_key=?").bind(started.data.id,first.id).first(),{status:'IN_PROGRESS',result_json:'{"completedSets":1}'});
+  const adopted=await post(mf,'/api/mission',{action:'replace-retired-activity',missionId:started.data.missionId,profileContextId:profileId,revision:started.data.revision,activityKey:first.id},'safety-replacement-adopt');assert.equal(adopted.status,200);assert.equal(adopted.data.safetyHold,undefined);assert.equal(adopted.data.executionSnapshot.blocks[0].version,2);assert.equal(adopted.data.revision,started.data.revision+1);
+  assert.deepEqual(adopted.data.activities[0].result,{replacementHistory:[{activityId:first.activityId,version:first.version,result:{completedSets:1},status:'in-progress'}]});
+  const replayed=await post(mf,'/api/mission',{action:'replace-retired-activity',missionId:started.data.missionId,profileContextId:profileId,revision:started.data.revision,activityKey:first.id},'safety-replacement-adopt');assert.equal(replayed.status,200);assert.deepEqual(replayed.data,adopted.data);
+  const audit=await db.prepare("SELECT metadata_json FROM audit_events WHERE profile_id=? AND event_type='MISSION_SAFETY_REPLACEMENT_ADOPTED'").bind(profileId).first();assert.deepEqual(JSON.parse(audit.metadata_json),{missionId:started.data.missionId,activityKey:first.id,from:{activityId:first.activityId,version:first.version},to:{activityId:first.activityId,version:2}});
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM audit_events WHERE profile_id=? AND event_type='MISSION_SAFETY_REPLACEMENT_ADOPTED'").bind(profileId).first()).n,1);
+ }finally{await mf.dispose();}
+});
+
+test('a reviewed but ineligible replacement is not offered',async()=>{
+ const {mf,db}=await setup();try{
+  const started=await post(mf,'/api/mission',{action:'start'},'ineligible-replacement-start');const first=started.data.executionSnapshot.blocks[0];const source=await db.prepare('SELECT family_id,payload_json FROM activity_versions WHERE activity_id=? AND version=?').bind(first.activityId,first.version).first();
+  const replacement={...JSON.parse(source.payload_json),version:2,equipment:['resistance-band'],substitutions:[],publishedAt:'2026-09-12T02:00:00.000Z'};
+  await db.prepare('INSERT INTO activity_versions(activity_id,version,family_id,payload_json,content_status,development_reviewer_id,development_reviewed_at,safety_reviewer_id,safety_reviewed_at,published_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(first.activityId,2,source.family_id,JSON.stringify(replacement),'PUBLISHED','development-fixture','2026-09-12T02:00:00.000Z','safety-fixture','2026-09-12T02:00:00.000Z','2026-09-12T02:00:00.000Z','2026-09-12T02:00:00.000Z').run();
+  await db.prepare("UPDATE activity_versions SET content_status='RETIRED',retired_at=?,retirement_reason=? WHERE activity_id=? AND version=?").bind('2026-09-12T02:00:00.000Z','SAFETY: reviewer withdrawal',first.activityId,first.version).run();
+  const held=await get(mf);assert.equal(held.data.safetyHold.code,'CONTENT_RETIRED_SAFETY');assert.equal(held.data.safetyHold.replacement,null);assert.equal(held.data.safetyHold.nextAction,'adult-content-review');
  }finally{await mf.dispose();}
 });

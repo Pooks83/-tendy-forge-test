@@ -31,7 +31,7 @@ export async function POST(request:Request){
    const result=await startCurrentMission(trainingDb(),identity,operationKey);
    return reply(result.data,result.replayed?200:201);
   }
-  const allowed=new Set(['start-activity','record-result','start-rest','end-rest','complete-activity','skip-activity','pause','interrupt','safety-stop','resume','abandon','complete-mission']);
+  const allowed=new Set(['start-activity','record-result','start-rest','end-rest','complete-activity','skip-activity','pause','interrupt','safety-stop','resume','abandon','complete-mission','replace-retired-activity']);
   if(!allowed.has(input.action)||!('missionId' in input)||typeof input.missionId!=='string'||!('profileContextId' in input)||typeof input.profileContextId!=='string'||!('revision' in input)||!Number.isInteger(input.revision))throw canonicalError('INVALID_ACTION','That mission action is not available.',400);
   const queuedAt='queuedAt' in input?input.queuedAt:undefined;const offlineMutationId='offlineMutationId' in input?input.offlineMutationId:undefined;
   if((queuedAt===undefined)!==(offlineMutationId===undefined)||queuedAt!==undefined&&(typeof queuedAt!=='string'||typeof offlineMutationId!=='string'||offlineMutationId!==operationKey||!Number.isFinite(Date.parse(queuedAt))||new Date(Date.parse(queuedAt)).toISOString()!==queuedAt))throw canonicalError('INVALID_ACTION','That saved action cannot be safely reconciled.',400);

@@ -84,13 +84,17 @@ test('canonical onboarding keeps child data after consent and supports no-equipm
   assert.match(plan,/Monday/);
 });
 test('Today explains unavailable content and substitutions without internal review detail',async()=>{
- const {MissionUnavailableState,MissionSubstitutionNotice,MissionSafetyHold}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
+ const {MissionUnavailableState,MissionSubstitutionNotice,MissionSafetyHold,AdultSafetyReplacement}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
  const unavailable=renderToStaticMarkup(React.createElement(MissionUnavailableState,{message:'An adult needs to review your training plan.',onAdult:()=>{}}));
  assert.match(unavailable,/An adult needs to review your training plan/);assert.match(unavailable,/Go to parent area/);assert.equal((unavailable.match(/<button/g)||[]).length,1);assert.doesNotMatch(unavailable,/reviewer|score|weight/i);
  const substitution=renderToStaticMarkup(React.createElement(MissionSubstitutionNotice,{substitution:{id:'wall-reduced',equipment:[],space:['small-indoor'],setup:'Use a clear floor marker instead.'}}));
  assert.match(substitution,/Safe setup change/);assert.match(substitution,/Use a clear floor marker instead/);assert.doesNotMatch(substitution,/reviewer/i);
  const hold=renderToStaticMarkup(React.createElement(MissionSafetyHold,{message:'This activity was withdrawn for safety.',replacement:{activityId:'a',version:2,name:'Reviewed replacement'},onAdult:()=>{}}));
  assert.match(hold,/withdrawn for safety/);assert.match(hold,/Reviewed replacement/);assert.equal((hold.match(/<button/g)||[]).length,1);
+ const adult=renderToStaticMarkup(React.createElement(AdultSafetyReplacement,{hold:{message:'Withdrawn.',activityKey:'a',replacement:{activityId:'a',version:2,name:'Reviewed replacement'}},busy:false,onAdopt:()=>{}}));
+ assert.match(adult,/Safety replacement required/);assert.match(adult,/Reviewed replacement/);assert.match(adult,/Use reviewed replacement/);assert.equal((adult.match(/<button/g)||[]).length,1);
+ const blockedAdult=renderToStaticMarkup(React.createElement(AdultSafetyReplacement,{hold:{message:'Withdrawn.',activityKey:'a',replacement:null},busy:false,onAdopt:()=>{}}));
+ assert.match(blockedAdult,/No eligible reviewed replacement is available/);assert.equal((blockedAdult.match(/<button/g)||[]).length,0);
 });
 test('child first value defines the four canonical screens without rank or tutorial copy',async()=>{
   const {PlayerFirstValueFlow}=await vite.ssrLoadModule('/components/tendie-forge/player-first-value.tsx');
