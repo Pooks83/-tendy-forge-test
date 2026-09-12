@@ -62,7 +62,7 @@ test('onboarding drafts are account scoped and contain consent recovery metadata
 test('identity migration adds setup fields without changing legacy training state',()=>{
  const db=migratedDatabase();
  const columns=db.prepare("PRAGMA table_info('training_profiles')").all().map(row=>row.name);
- for(const name of ['catches','experience','equipment_json','planned_days_json','mission_minutes','setup_status','updated_at'])assert.ok(columns.includes(name),`${name} missing`);
+ for(const name of ['catches','experience','equipment_json','available_spaces_json','planned_days_json','mission_minutes','setup_status','updated_at'])assert.ok(columns.includes(name),`${name} missing`);
  assert.ok(columns.includes('state'));
 });
 

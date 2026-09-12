@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {Miniflare} from 'miniflare';
+import {seedPublishedContent} from './helpers/training-content-fixture.mjs';
 
 async function setup(){
  const mf=new Miniflare({modules:true,scriptPath:new URL('../dist/server/index.js',import.meta.url).pathname,modulesRules:[{type:'ESModule',include:['**/*.js','**/*.mjs'],fallthrough:true}],compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB']});
@@ -10,6 +11,7 @@ async function setup(){
   const sql=await readFile(new URL(`../drizzle/${file}`,import.meta.url),'utf8');
   for(const statement of sql.split('--> statement-breakpoint'))if(statement.trim())await db.prepare(statement.trim()).run();
  }
+ await seedPublishedContent(db);
  return {mf,db};
 }
 
@@ -20,6 +22,7 @@ const get=async(mf,path)=>{const response=await mf.dispatchFetch(`http://localho
 
 async function readyPlayer(mf,db,nickname='Goalie',key='mission-player',analytics=true){
  const created=await post(mf,'/api/onboarding',setupInput(nickname,analytics),`${key}-create`);
+ await db.prepare('UPDATE training_profiles SET available_spaces_json=? WHERE id=?').bind('["small-indoor"]',created.data.profileId).run();
  const now='2026-09-11T12:00:00.000Z';
  await db.prepare("INSERT INTO first_challenge_results(profile_id,protocol_version,status,started_at,completed_at,result_json,updated_at) VALUES(?,?,?,?,?,?,?)").bind(created.data.profileId,'tf-first-ready-v1','completed',now,now,'{"completedSeconds":60,"claim":"completed"}',now).run();
  return created.data.profileId;
@@ -60,13 +63,13 @@ test('mission start snapshots ordered execution and GET returns the authoritativ
   assert.equal(started.data.status,'in-progress');
   assert.equal(started.data.profileContextId,profileId);
   assert.equal(started.data.revision,1);
-  assert.equal(started.data.contentVersion,'tf-curriculum-v1');
-  assert.deepEqual(started.data.activities.map(item=>item.ordinal),[0,1,2,3,4,5]);
+  assert.equal(started.data.contentVersion,'tf-mission-generator-v1');
+  assert.deepEqual(started.data.activities.map(item=>item.ordinal),[0,1,2]);
   assert.equal(started.data.activities[0].status,'ready');
   const row=await db.prepare('SELECT execution_snapshot_json,current_activity_index,revision FROM mission_instances WHERE profile_id=?').bind(profileId).first();
-  assert.equal(JSON.parse(row.execution_snapshot_json).blocks.length,6);
+  assert.equal(JSON.parse(row.execution_snapshot_json).blocks.length,3);
   assert.deepEqual({current_activity_index:row.current_activity_index,revision:row.revision},{current_activity_index:0,revision:1});
-  assert.equal((await db.prepare('SELECT count(*) AS n FROM activity_instances WHERE mission_instance_id=?').bind(started.data.id).first()).n,6);
+  assert.equal((await db.prepare('SELECT count(*) AS n FROM activity_instances WHERE mission_instance_id=?').bind(started.data.id).first()).n,3);
   const profile=await db.prepare('SELECT state FROM training_profiles WHERE id=?').bind(profileId).first();
   await db.prepare('UPDATE training_profiles SET state=? WHERE id=?').bind(JSON.stringify({...JSON.parse(profile.state),week:1}),profileId).run();
   assert.deepEqual((await get(mf,'/api/mission')).data,started.data);
@@ -92,7 +95,7 @@ test('activity mutations preserve rest and result state and replay the same auth
   assert.equal(result.data.activities[0].status,'resting');
   const tooSoon=await post(mf,'/api/mission',{action:'end-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-rest-too-soon');
   assert.equal(tooSoon.status,409);assert.equal(tooSoon.data.error.code,'INVALID_STATE_TRANSITION');
-  await db.prepare("UPDATE activity_instances SET updated_at=datetime('now','-31 seconds') WHERE mission_instance_id=? AND activity_key=?").bind(result.data.id,activity.key).run();
+  await db.prepare("UPDATE activity_instances SET updated_at=datetime('now','-120 seconds') WHERE mission_instance_id=? AND activity_key=?").bind(result.data.id,activity.key).run();
   result=await post(mf,'/api/mission',{action:'end-rest',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-rest-end-1');
   result=await post(mf,'/api/mission',{action:'record-result',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key,result:{completedSets:2,usedEasierVersion:false}},'activity-result-2');
   const completed=await post(mf,'/api/mission',{action:'complete-activity',missionId,profileContextId:profileId,revision:result.data.revision,activityKey:activity.key},'activity-complete-1');

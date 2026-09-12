@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile,readdir} from 'node:fs/promises';
 import {Miniflare} from 'miniflare';
+import {seedPublishedContent} from './helpers/training-content-fixture.mjs';
 
 async function setup(){
  const mf=new Miniflare({modules:true,scriptPath:new URL('../dist/server/index.js',import.meta.url).pathname,modulesRules:[{type:'ESModule',include:['**/*.js','**/*.mjs'],fallthrough:true}],compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:['DB']});
@@ -10,8 +11,11 @@ async function setup(){
   const sql=await readFile(new URL(`../drizzle/${file}`,import.meta.url),'utf8');
   for(const statement of sql.split('--> statement-breakpoint'))if(statement.trim())await db.prepare(statement.trim()).run();
  }
+ await seedPublishedContent(db);
  return {mf,db};
 }
+
+const setTrainingSpace=(db,profileId)=>db.prepare('UPDATE training_profiles SET available_spaces_json=? WHERE id=?').bind('["small-indoor"]',profileId).run();
 
 const auth={'oai-authenticated-user-id':'parent','oai-authenticated-user-email':'parent@example.test'};
 const post=async(mf,path,body,key)=>{
@@ -26,6 +30,7 @@ test('GJ-01 persists challenge completion and first mission start exactly once',
  try{
   const created=await post(mf,'/api/onboarding',setupInput(true),'gj-create-1');
   assert.equal(created.status,201);
+  await setTrainingSpace(db,created.data.profileId);
   assert.equal((await post(mf,'/api/first-challenge',{action:'start'},'gj-challenge-start')).status,201);
   await db.prepare("UPDATE first_challenge_results SET started_at=datetime('now','-61 seconds') WHERE profile_id=?").bind(created.data.profileId).run();
   assert.equal((await post(mf,'/api/first-challenge',{action:'complete'},'gj-challenge-complete')).status,200);
@@ -49,6 +54,7 @@ test('mission start remains authoritative when optional analytics is declined',a
  const {mf,db}=await setup();
  try{
   const created=await post(mf,'/api/onboarding',setupInput(false),'gj-create-no-analytics');
+  await setTrainingSpace(db,created.data.profileId);
   await post(mf,'/api/first-challenge',{action:'start'},'gj-start-no-analytics');
   await db.prepare("UPDATE first_challenge_results SET started_at=datetime('now','-61 seconds') WHERE profile_id=?").bind(created.data.profileId).run();
   await post(mf,'/api/first-challenge',{action:'complete'},'gj-complete-no-analytics');
@@ -64,6 +70,7 @@ test('mission start is blocked before challenge completion, during a safety stop
  const {mf,db}=await setup();
  try{
   const created=await post(mf,'/api/onboarding',setupInput(true),'gj-create-blocks');
+  await setTrainingSpace(db,created.data.profileId);
   const tooSoon=await post(mf,'/api/mission',{action:'start'},'gj-mission-too-soon');
   assert.equal(tooSoon.status,409);
   assert.equal(tooSoon.data.error.code,'INVALID_STATE_TRANSITION');

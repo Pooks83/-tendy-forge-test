@@ -146,6 +146,7 @@ Commit: `feat: generate explainable missions`
 
 **Files:**
 - Create: `lib/training-content-store.ts`
+- Create: `drizzle/0009_profile_training_space.sql`
 - Modify: `lib/mission-store.ts`
 - Modify: `lib/identity-contract.mjs`
 - Modify: `app/api/mission/route.ts`
@@ -155,25 +156,26 @@ Commit: `feat: generate explainable missions`
 **Interfaces:**
 - `loadPublishedCatalog(db)` returns validated published versions only.
 - Mission GET/start generates from the active server profile’s age band, equipment, mission duration and training state; caller-supplied profile facts are ignored.
+- Practice-space eligibility comes only from persisted adult-confirmed profile space IDs. Existing profiles have no inferred space and receive adult plan review until that fact is recorded by the later schedule/profile surface.
 - Started mission persists the complete generated plan in `execution_snapshot_json` and its catalog/config version in `content_version`.
 
-- [ ] **Step 1: Add failing API tests with explicitly seeded reviewed content**
+- [x] **Step 1: Add failing API tests with explicitly seeded reviewed content**
 
 Cover 15/25/35 outputs, missing equipment substitution, no eligible content, unreviewed content exclusion, start-time snapshot immutability, active mission reload after catalog change, and cross-player/profile-input rejection.
 
-- [ ] **Step 2: Run the focused API suite and confirm failure**
+- [x] **Step 2: Run the focused API suite and confirm failure**
 
 Run: `npm run build && node --test tests/mission-api.test.mjs tests/mission-content-retirement.test.mjs`
 
-- [ ] **Step 3: Implement catalog loading and mission generation in `mission-store.ts`**
+- [x] **Step 3: Implement catalog loading and mission generation in `mission-store.ts`**
 
 Replace new-mission calls to the legacy `buildSession` rotation. Retain `sessionForMission` only for pre-TF-MVP-006 migration. Return an explainable not-started or unavailable projection; never create empty activity rows.
 
-- [ ] **Step 4: Implement retirement behavior**
+- [x] **Step 4: Implement retirement behavior**
 
 Ordinary content update/retirement does not rewrite an active snapshot. A version explicitly retired for safety blocks its unfinished activity and returns an approved replacement when one exists; otherwise it returns adult review without deleting acknowledged evidence.
 
-- [ ] **Step 5: Run focused integration tests and commit**
+- [x] **Step 5: Run focused integration tests and commit**
 
 Run: `npm run build && node --test tests/mission-api.test.mjs tests/mission-content-retirement.test.mjs`
 

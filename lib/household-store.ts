@@ -4,8 +4,8 @@ import {readStoredOperation,storeOperationStatement} from './idempotency-store';
 import {productEventStatement} from './product-event-store';
 import type {AdultIdentity} from './account-identity';
 
-type HouseholdRow={id:string;nickname:string;age_band:string;catches:string|null;experience:string|null;equipment_json:string|null;planned_days_json:string|null;mission_minutes:number|null;setup_status:string;active:number};
-type PlayerRow={id:string;nickname:string;age_band:string;catches:string|null;experience:string|null;equipment_json:string|null;planned_days_json:string|null;mission_minutes:number|null;setup_status:string;state:string;revision:number};
+type HouseholdRow={id:string;nickname:string;age_band:string;catches:string|null;experience:string|null;equipment_json:string|null;available_spaces_json:string|null;planned_days_json:string|null;mission_minutes:number|null;setup_status:string;active:number};
+type PlayerRow={id:string;nickname:string;age_band:string;catches:string|null;experience:string|null;equipment_json:string|null;available_spaces_json:string|null;planned_days_json:string|null;mission_minutes:number|null;setup_status:string;state:string;revision:number};
 
 const parseArray=(value:string|null)=>{try{return value?JSON.parse(value):[];}catch{return [];}};
 
@@ -83,8 +83,8 @@ export async function reconcileLegacySetup(db:D1Database,identity:AdultIdentity,
 }
 
 export async function listHousehold(db:D1Database,identity:AdultIdentity){
- const rows=await db.prepare("SELECT p.id,p.nickname,p.age_band,p.catches,p.experience,p.equipment_json,p.planned_days_json,p.mission_minutes,p.setup_status,CASE WHEN c.profile_id=p.id THEN 1 ELSE 0 END AS active FROM guardian_player g JOIN training_profiles p ON p.id=g.profile_id LEFT JOIN active_player_context c ON c.account_id=g.account_id AND c.profile_id=p.id WHERE g.account_id=? AND g.status='active' ORDER BY p.created_at").bind(identity.id).all<HouseholdRow>();
- return {profiles:rows.results.map(row=>({id:row.id,nickname:row.nickname,ageBand:row.age_band,catches:row.catches,experience:row.experience,equipment:parseArray(row.equipment_json),plannedDays:parseArray(row.planned_days_json),missionMinutes:row.mission_minutes,setupStatus:row.setup_status,active:Boolean(row.active)}))};
+ const rows=await db.prepare("SELECT p.id,p.nickname,p.age_band,p.catches,p.experience,p.equipment_json,p.available_spaces_json,p.planned_days_json,p.mission_minutes,p.setup_status,CASE WHEN c.profile_id=p.id THEN 1 ELSE 0 END AS active FROM guardian_player g JOIN training_profiles p ON p.id=g.profile_id LEFT JOIN active_player_context c ON c.account_id=g.account_id AND c.profile_id=p.id WHERE g.account_id=? AND g.status='active' ORDER BY p.created_at").bind(identity.id).all<HouseholdRow>();
+ return {profiles:rows.results.map(row=>({id:row.id,nickname:row.nickname,ageBand:row.age_band,catches:row.catches,experience:row.experience,equipment:parseArray(row.equipment_json),spaces:parseArray(row.available_spaces_json),plannedDays:parseArray(row.planned_days_json),missionMinutes:row.mission_minutes,setupStatus:row.setup_status,active:Boolean(row.active)}))};
 }
 
 async function relationshipStatus(db:D1Database,identity:AdultIdentity,profileId:string){
@@ -94,14 +94,14 @@ async function relationshipStatus(db:D1Database,identity:AdultIdentity,profileId
 }
 
 async function playerRow(db:D1Database,profileId:string){
- const row=await db.prepare('SELECT id,nickname,age_band,catches,experience,equipment_json,planned_days_json,mission_minutes,setup_status,state,revision FROM training_profiles WHERE id=?').bind(profileId).first<PlayerRow>();
+ const row=await db.prepare('SELECT id,nickname,age_band,catches,experience,equipment_json,available_spaces_json,planned_days_json,mission_minutes,setup_status,state,revision FROM training_profiles WHERE id=?').bind(profileId).first<PlayerRow>();
  if(!row)throw canonicalError('PLAYER_CONTEXT_REQUIRED','Choose your goalie again.',409);
  return row;
 }
 
 function project(row:PlayerRow){
  if(row.setup_status!=='ready')throw canonicalError('SETUP_REVIEW_REQUIRED','A parent must review this goalie setup before handoff.',409);
- return buildPlayerProjection({id:row.id,nickname:row.nickname,ageBand:row.age_band,catches:row.catches,experience:row.experience,equipment:parseArray(row.equipment_json),plannedDays:parseArray(row.planned_days_json),missionMinutes:row.mission_minutes,setupStatus:row.setup_status,revision:row.revision},JSON.parse(row.state));
+ return buildPlayerProjection({id:row.id,nickname:row.nickname,ageBand:row.age_band,catches:row.catches,experience:row.experience,equipment:parseArray(row.equipment_json),spaces:parseArray(row.available_spaces_json),plannedDays:parseArray(row.planned_days_json),missionMinutes:row.mission_minutes,setupStatus:row.setup_status,revision:row.revision},JSON.parse(row.state));
 }
 
 export async function setActivePlayer(db:D1Database,identity:AdultIdentity,profileId:string,operationKey:string){
