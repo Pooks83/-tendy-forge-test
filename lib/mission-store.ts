@@ -14,7 +14,7 @@ type ExecutionSnapshot=Session&{reading?:{question:string;options:string[];answe
 type MissionRow={id:string;profile_id:string;mission_key:string;status:string;started_at:string;completed_at:string|null;updated_at:string;revision:number;current_activity_index:number;content_version:string;execution_snapshot_json:string;paused_at:string|null;interrupted_at:string|null;abandoned_at:string|null};
 type ActivityRow={id:string;mission_instance_id:string;activity_key:string;ordinal:number;status:string;result_json:string|null;rest_remaining_seconds:number;started_at:string|null;completed_at:string|null;updated_at:string;rest_completed_after_set:number};
 type ProfileStateRow={state:string;revision:number};
-type MutationInput={action:string;missionId:string;profileContextId:string;revision:number;activityKey?:string;remainingSeconds?:number;result?:Record<string,unknown>;reason?:string};
+type MutationInput={action:string;missionId:string;profileContextId:string;revision:number;activityKey?:string;remainingSeconds?:number;result?:Record<string,unknown>;reason?:string;queuedAt?:string;offlineMutationId?:string};
 type MissionResult=Record<string,string|number|boolean>;
 type ExecutionActivity={key:string;ordinal:number;status:string;result:MissionResult|null;restRemainingSeconds:number;restCompletedAfterSet:number;startedAt?:string;completedAt?:string;updatedAt?:string};
 type MissionExecution={missionId:string;status:string;revision:number;currentActivityIndex:number;contentVersion:string;activities:ExecutionActivity[];startedAt:string;updatedAt?:string;completedAt?:string;pausedAt?:string;interruptedAt?:string;interruptionReason?:string;abandonedAt?:string};
@@ -159,6 +159,13 @@ function legacyProjection(raw:string,snapshot:Session,next:MissionExecution,time
 
 function eventFor(input:MutationInput){return ({'start-activity':'activity_started','complete-activity':'activity_completed','skip-activity':'activity_skipped','complete-mission':'mission_completed','abandon':'mission_abandoned'} as Record<string,string>)[input.action]||null;}
 
+function offlineEventStatements(db:D1Database,identity:AdultIdentity,profileId:string,input:MutationInput,timestamp:string,condition:string,conditionBindings:(string|number)[]){
+ if(!input.queuedAt||!input.offlineMutationId)return [];
+ const queuedSeconds=Math.max(0,Math.floor((Date.parse(timestamp)-Date.parse(input.queuedAt))/1000));
+ const metadata=JSON.stringify({missionId:input.missionId,action:input.action,queuedSeconds});
+ return ['offline_pending','sync_reconciled'].map(eventName=>db.prepare(`INSERT OR IGNORE INTO product_events(id,logical_key,event_name,account_context_id,profile_context_id,app_version,build_version,config_version,metadata_json,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${condition}`).bind(crypto.randomUUID(),`${eventName}:${profileId}:${input.offlineMutationId}`,eventName,identity.id,profileId,'0.1.0',process.env.SITES_BUILD_ID||process.env.GIT_COMMIT_SHA||'local-unpublished','tf-v1.4',metadata,timestamp,...conditionBindings));
+}
+
 function normalizedResult(input:MutationInput,before:MissionExecution,snapshot:ExecutionSnapshot){
  const activity=before.activities[before.currentActivityIndex];const block=snapshot.blocks.find(item=>item.id===activity?.key);const raw=input.result;
  if(!activity||!block||!raw||!Number.isInteger(raw.completedSets))throw canonicalError('INVALID_RESULT','Finish one listed set before saving progress.',400);
@@ -199,6 +206,7 @@ export async function mutateCurrentMission(db:D1Database,identity:AdultIdentity,
  const data=projection({...loaded.row,status:next.status,revision:next.revision,current_activity_index:next.currentActivityIndex,completed_at:next.completedAt||null,updated_at:timestamp,paused_at:next.pausedAt||loaded.row.paused_at,interrupted_at:next.interruptedAt||loaded.row.interrupted_at,abandoned_at:next.abandonedAt||loaded.row.abandoned_at},projectedRows);
  const eventName=eventFor(input);const analytics=await db.prepare('SELECT analytics_allowed FROM privacy_preferences WHERE profile_id=?').bind(active.profileId).first<{analytics_allowed:number}>();
  const condition='EXISTS(SELECT 1 FROM mission_instances WHERE id=? AND revision=?) AND EXISTS(SELECT 1 FROM training_profiles WHERE id=? AND revision=?)';
+ const conditionBindings=[loaded.row.id,next.revision,active.profileId,profile.revision+1];
  const activityStatements=nextRows.map((activity,index)=>db.prepare(`UPDATE activity_instances SET status=?,result_json=?,rest_remaining_seconds=?,rest_completed_after_set=?,started_at=?,completed_at=?,updated_at=? WHERE id=? AND ${condition}`).bind(activity.status,activity.result?JSON.stringify(activity.result):null,activity.restRemainingSeconds||0,activity.restCompletedAfterSet||0,activity.startedAt||null,activity.completedAt||null,timestamp,loaded.activities[index].id,loaded.row.id,next.revision,active.profileId,profile.revision+1));
  try{
   const results=await db.batch([
@@ -207,6 +215,7 @@ export async function mutateCurrentMission(db:D1Database,identity:AdultIdentity,
    ...activityStatements,
    db.prepare(`INSERT INTO audit_events(id,actor_account_id,profile_id,event_type,metadata_json,created_at) SELECT ?,?,?,?,?,? WHERE ${condition}`).bind(crypto.randomUUID(),identity.id,active.profileId,`MISSION_${input.action.replaceAll('-','_').toUpperCase()}`,JSON.stringify({missionId:input.missionId,activityKey:input.activityKey||null,revision:next.revision}),timestamp,loaded.row.id,next.revision,active.profileId,profile.revision+1),
    ...(eventName&&analytics?.analytics_allowed===1?[db.prepare(`INSERT OR IGNORE INTO product_events(id,logical_key,event_name,account_context_id,profile_context_id,app_version,build_version,config_version,metadata_json,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${condition}`).bind(crypto.randomUUID(),`${eventName}:${active.profileId}:${input.missionId}:${input.activityKey||'mission'}`,eventName,identity.id,active.profileId,'0.1.0',process.env.SITES_BUILD_ID||process.env.GIT_COMMIT_SHA||'local-unpublished','tf-v1.4',JSON.stringify({missionId:input.missionId,activityKey:input.activityKey||null}),timestamp,loaded.row.id,next.revision,active.profileId,profile.revision+1)]:[]),
+   ...(analytics?.analytics_allowed===1?offlineEventStatements(db,identity,active.profileId,input,timestamp,condition,conditionBindings):[]),
    db.prepare(`INSERT INTO idempotency_records(account_id,operation_key,operation,response_json,created_at) SELECT ?,?,?,?,? WHERE ${condition}`).bind(identity.id,operationKey,operation,JSON.stringify(data),timestamp,loaded.row.id,next.revision,active.profileId,profile.revision+1),
   ]);
   if(!results[0].meta.changes||!results[1].meta.changes)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);

@@ -105,6 +105,14 @@ test('training save feedback exposes the error and reload action, and stays abse
  assert.match(html,/role="alert"/);assert.match(html,/Progress changed on another device/);assert.match(html,/<button/);
  assert.equal(renderToStaticMarkup(React.createElement(TrainingSaveError,{message:'',onReload:()=>{}})),'');
 });
+test('offline mission status distinguishes device storage, sync, conflict, and another goalie',async()=>{
+ const {OfflineMissionStatus}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
+ const render=status=>renderToStaticMarkup(React.createElement(OfflineMissionStatus,{status,count:2,onSync:()=>{},onAdult:()=>{}}));
+ assert.match(render('pending'),/Saved on this device/);assert.match(render('pending'),/Sync now/);
+ assert.match(render('syncing'),/Confirming saved progress/);
+ assert.match(render('adult-review'),/adult must review/);assert.match(render('adult-review'),/Adult review/);
+ assert.match(render('other-profile'),/belongs to another goalie/);assert.doesNotMatch(render('other-profile'),/Sync now/);
+});
 test('player activity reload renders controls from authoritative mission state',async()=>{
  const {DrillDetail}=await vite.ssrLoadModule('/components/goalie-forge/training-app.tsx');
  const {Dialog}=await vite.ssrLoadModule('/components/ui/dialog.tsx');

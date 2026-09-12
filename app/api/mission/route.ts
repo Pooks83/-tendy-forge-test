@@ -33,6 +33,8 @@ export async function POST(request:Request){
   }
   const allowed=new Set(['start-activity','record-result','start-rest','end-rest','complete-activity','skip-activity','pause','interrupt','safety-stop','resume','abandon','complete-mission']);
   if(!allowed.has(input.action)||!('missionId' in input)||typeof input.missionId!=='string'||!('profileContextId' in input)||typeof input.profileContextId!=='string'||!('revision' in input)||!Number.isInteger(input.revision))throw canonicalError('INVALID_ACTION','That mission action is not available.',400);
+  const queuedAt='queuedAt' in input?input.queuedAt:undefined;const offlineMutationId='offlineMutationId' in input?input.offlineMutationId:undefined;
+  if((queuedAt===undefined)!==(offlineMutationId===undefined)||queuedAt!==undefined&&(typeof queuedAt!=='string'||typeof offlineMutationId!=='string'||offlineMutationId!==operationKey||!Number.isFinite(Date.parse(queuedAt))||new Date(Date.parse(queuedAt)).toISOString()!==queuedAt))throw canonicalError('INVALID_ACTION','That saved action cannot be safely reconciled.',400);
   const result=await mutateCurrentMission(trainingDb(),identity,input as Parameters<typeof mutateCurrentMission>[2],operationKey);
   return reply(result.data);
  }catch(error){return failure(error);}

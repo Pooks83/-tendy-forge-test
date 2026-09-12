@@ -14,16 +14,42 @@ async function setup(){
 }
 
 const auth={'oai-authenticated-user-id':'parent','oai-authenticated-user-email':'parent@example.test'};
-const setupInput=nickname=>({nickname,ageBand:'10–12',catches:'left',experience:'new',equipment:[],plannedDays:['monday'],missionMinutes:15,consentAccepted:true,consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',optionalPermissions:{analytics:true,notifications:false,clips:false}});
+const setupInput=(nickname,analytics=true)=>({nickname,ageBand:'10–12',catches:'left',experience:'new',equipment:[],plannedDays:['monday'],missionMinutes:15,consentAccepted:true,consentVersion:'tf-parent-consent-v1.4',policyVersion:'tf-privacy-v1.4',optionalPermissions:{analytics,notifications:false,clips:false}});
 const post=async(mf,path,body,key,headers=auth)=>{const response=await mf.dispatchFetch(`http://localhost${path}`,{method:'POST',headers:{...headers,'Content-Type':'application/json','Origin':'http://localhost','Idempotency-Key':key},body:JSON.stringify(body)});return {status:response.status,data:await response.json()};};
 const get=async(mf,path)=>{const response=await mf.dispatchFetch(`http://localhost${path}`,{headers:auth});return {status:response.status,data:await response.json()};};
 
-async function readyPlayer(mf,db,nickname='Goalie',key='mission-player'){
- const created=await post(mf,'/api/onboarding',setupInput(nickname),`${key}-create`);
+async function readyPlayer(mf,db,nickname='Goalie',key='mission-player',analytics=true){
+ const created=await post(mf,'/api/onboarding',setupInput(nickname,analytics),`${key}-create`);
  const now='2026-09-11T12:00:00.000Z';
  await db.prepare("INSERT INTO first_challenge_results(profile_id,protocol_version,status,started_at,completed_at,result_json,updated_at) VALUES(?,?,?,?,?,?,?)").bind(created.data.profileId,'tf-first-ready-v1','completed',now,now,'{"completedSeconds":60,"claim":"completed"}',now).run();
  return created.data.profileId;
 }
+
+test('queued mission sync records privacy-safe opt-in events exactly once',async()=>{
+ const {mf,db}=await setup();
+ try{
+  const profileId=await readyPlayer(mf,db);const started=(await post(mf,'/api/mission',{action:'start'},'offline-start')).data;
+  const operationKey='offline-activity-start';const queuedAt='2026-09-11T11:59:00.000Z';
+  const body={action:'start-activity',missionId:started.missionId,profileContextId:profileId,revision:started.revision,activityKey:started.activities[0].key,queuedAt,offlineMutationId:operationKey};
+  const synced=await post(mf,'/api/mission',body,operationKey);assert.equal(synced.status,200);
+  const replay=await post(mf,'/api/mission',body,operationKey);assert.deepEqual(replay.data,synced.data);
+  const events=(await db.prepare("SELECT event_name,logical_key,metadata_json FROM product_events WHERE event_name IN ('offline_pending','sync_reconciled') ORDER BY event_name").all()).results;
+  assert.deepEqual(events.map(item=>item.event_name),['offline_pending','sync_reconciled']);
+  assert.equal(new Set(events.map(item=>item.logical_key)).size,2);
+  for(const event of events){const metadata=JSON.parse(event.metadata_json);assert.equal(metadata.missionId,started.missionId);assert.equal(metadata.action,'start-activity');assert.equal(typeof metadata.queuedSeconds,'number');assert.doesNotMatch(event.metadata_json,/Goalie|email|nickname|note/i);}
+ }finally{await mf.dispose();}
+});
+
+test('queued sync telemetry respects analytics decline and rejects ambiguous queue identity',async()=>{
+ const {mf,db}=await setup();
+ try{
+  const profileId=await readyPlayer(mf,db,'Private','private',false);const started=(await post(mf,'/api/mission',{action:'start'},'private-start')).data;
+  const body={action:'start-activity',missionId:started.missionId,profileContextId:profileId,revision:started.revision,activityKey:started.activities[0].key,queuedAt:'2026-09-11T11:59:00.000Z',offlineMutationId:'different-key'};
+  const rejected=await post(mf,'/api/mission',body,'private-offline');assert.equal(rejected.status,400);assert.equal(rejected.data.error.code,'INVALID_ACTION');
+  const synced=await post(mf,'/api/mission',{...body,offlineMutationId:'private-offline'},'private-offline');assert.equal(synced.status,200);
+  assert.equal((await db.prepare("SELECT count(*) AS n FROM product_events WHERE event_name IN ('offline_pending','sync_reconciled')").first()).n,0);
+ }finally{await mf.dispose();}
+});
 
 test('mission start snapshots ordered execution and GET returns the authoritative projection',async()=>{
  const {mf,db}=await setup();

@@ -13,6 +13,8 @@ import {activeAdultProfileId,buildPlayerViewState,loadInitialAccess} from '@/lib
 import {completeContextSwitch,contextSwitchOperationKey} from '@/lib/context-switch.mjs';
 import {resolveTodayMissionAction} from '@/lib/today-state.mjs';
 import {missionMutation,resolveMissionActivityControl} from '@/lib/mission-client.mjs';
+import {sendMissionMutation} from '@/lib/mission-request.mjs';
+import {OFFLINE_MISSION_QUEUE_KEY,applyOfflineMutation,createOfflineMutation,enqueueOfflineMutation,projectOfflineQueue,reconcileOfflineQueue,restoreOfflineQueue,serializeOfflineQueue} from '@/lib/offline-mission-queue.mjs';
 import {DrillMap} from './drill-map';
 import {OnboardingFlow} from '@/components/tendie-forge/onboarding-flow';
 import {PlayerFirstValueFlow} from '@/components/tendie-forge/player-first-value';
@@ -20,7 +22,9 @@ type TrainingState=ReturnType<typeof newTrainingState>;
 type Profile={id:string;nickname:string;team:string;ageBand:string;role:'owner'|'coach'|'player';active?:boolean;revision:number;state:TrainingState;grants:string[];catches?:string|null;experience?:string|null;equipment?:string[];plannedDays?:string[];missionMinutes?:number|null;setupStatus?:string};
 type PlayerProjection={profile:{id:string;nickname:string;ageBand:string;catches:string;experience:string;equipment:string[];plannedDays:string[];missionMinutes:number;setupStatus:string;revision:number};training:TrainingState};
 type MissionActivity={key:string;ordinal:number;status:string;result:{completedSets?:number;answer?:number;correct?:boolean;usedEasierVersion?:boolean}|null;requiredSets:number;restSeconds:number;restRemainingSeconds:number;restCompletedAfterSet:number};
-type MissionProjection={id?:string;missionId:string;profileContextId:string;status:string;revision:number;currentActivityIndex:number;activities:MissionActivity[];executionSnapshot:ReturnType<typeof buildSession>&{reading?:{question:string;options:string[];answer:number;explanation:string}}};
+type MissionProjection={id?:string;missionId:string;profileContextId:string;status:string;revision:number;currentActivityIndex:number;activities:MissionActivity[];executionSnapshot:ReturnType<typeof buildSession>&{reading?:{question:string;options:string[];answer:number;explanation:string}};pendingSync?:boolean};
+type OfflineMutation=ReturnType<typeof createOfflineMutation>;
+type OfflineStatus='pending'|'syncing'|'synced'|'other-profile'|'adult-review'|'';
 type Action={type:string;drillId?:string;setIndex?:number;answer?:number;usedEasierVersion?:boolean;skillId?:number;passed?:boolean;note?:string;ratings?:number[];cause?:string;reason?:string};
 type Drill=ReturnType<typeof buildSession>['blocks'][number];
 const NAV=[['Home',Home],['Train',Dumbbell],['Progress',TrendingUp],['Profile',User]] as const;
@@ -48,8 +52,7 @@ async function fetchMissionProjection():Promise<MissionProjection>{
 }
 async function requestMissionMutation(current:MissionProjection,action:string,details:Record<string,unknown>={}):Promise<MissionProjection>{
  const mutation=missionMutation(current,action,details);
- const response=await fetch('/api/mission',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':mutation.operationKey},body:JSON.stringify(mutation.body)});
- return await readTrainingResponse(response) as MissionProjection;
+ return await sendMissionMutation(fetch,mutation) as MissionProjection;
 }
 async function fetchTrainingProfiles():Promise<{mode:'guest'|'signed-in';profiles:Profile[]}> {
  const response=await fetch('/api/training',{cache:'no-store'});
@@ -84,9 +87,10 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
  const [tab,setTab]=useState('Home');const [profiles,setProfiles]=useState<Profile[]>([]);const [active,setActive]=useState('');
  const [player,setPlayer]=useState<PlayerProjection|null>(null);const [showFirstValue,setShowFirstValue]=useState(false);const [resumeFirstValue,setResumeFirstValue]=useState(false);
  const [mission,setMission]=useState<MissionProjection|null>(null);
+ const [offlineQueue,setOfflineQueue]=useState<OfflineMutation[]>([]);const [offlineStatus,setOfflineStatus]=useState<OfflineStatus>('');
  const [mode,setMode]=useState<'loading'|'signed-in'|'guest'|'error'>('loading');const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const [preview,setPreview]=useState(false);const [sample,setSample]=useState(newTrainingState);const [selected,setSelected]=useState<string|null>(null);
- const [celebration,setCelebration]=useState('');const busyRef=useRef(false);const dialogRef=useRef<HTMLDivElement>(null);const contextKeysRef=useRef(new Map<string,string>());
+ const [celebration,setCelebration]=useState('');const busyRef=useRef(false);const syncRef=useRef(false);const dialogRef=useRef<HTMLDivElement>(null);const contextKeysRef=useRef(new Map<string,string>());const queueRef=useRef<OfflineMutation[]>([]);const missionRef=useRef<MissionProjection|null>(null);
  const adultProfile=profiles.find(p=>p.id===active)||profiles[0];
  const profile:Profile|undefined=player?{...player.profile,team:'',role:'player',state:player.training,grants:[]}:adultProfile;
  const playerMode=Boolean(player);
@@ -102,12 +106,26 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
  const currentMissionActivity=playerMode?mission?.activities[mission.currentActivityIndex]:null;
  const skillChecks=state.checks as Array<{group:string;pathId:string;passed:boolean;date:string;skillId?:number}>;
  const navigate=useCallback((view:string,drillId:string|null=null,replace=false)=>{setTab(view);setSelected(drillId);if(typeof window!=='undefined'){const url=trainingLocation({view,drill:drillId});window.history[replace?'replaceState':'pushState']({},'',url);}},[]);
+ const persistOfflineQueue=useCallback((queue:OfflineMutation[])=>{queueRef.current=queue;setOfflineQueue(queue);if(typeof window!=='undefined')window.localStorage.setItem(OFFLINE_MISSION_QUEUE_KEY,serializeOfflineQueue(queue));},[]);
  const loadAdult=useCallback(async()=>{
   try{const result=await fetchTrainingProfiles();setProfiles(result.profiles);setActive(activeAdultProfileId(result.profiles));setMode(result.mode);setError('');}
   catch(e){setError(e instanceof Error?e.message:'Cannot load training');setMode('error');}
  },[]);
  const loadPlayer=useCallback(async()=>{try{const result=await fetchPlayerProjection();if(result){const currentMission=await fetchMissionProjection();setPlayer(result);setMission(currentMission);setProfiles([]);setMode('signed-in');setError('');}return result;}catch(e){setError(e instanceof Error?e.message:'Cannot load your goalie');return null;}},[]);
  const load=useCallback(async()=>{if(player)await loadPlayer();else await loadAdult();},[player,loadPlayer,loadAdult]);
+ const syncOffline=useCallback(async()=>{
+  const current=missionRef.current;if(syncRef.current||!current||!queueRef.current.length)return;syncRef.current=true;setOfflineStatus('syncing');
+  try{
+   const result=await reconcileOfflineQueue({queue:queueRef.current,profileContextId:current.profileContextId,send:(item:OfflineMutation)=>sendMissionMutation(fetch,item),fetchAuthoritative:fetchMissionProjection});
+   persistOfflineQueue(result.queue);if(result.mission){const confirmed={...result.mission,pendingSync:false};missionRef.current=confirmed;setMission(confirmed);}
+   setOfflineStatus(result.status as OfflineStatus);
+  }finally{syncRef.current=false;}
+ },[persistOfflineQueue]);
+ useEffect(()=>{missionRef.current=mission;},[mission]);
+ useEffect(()=>{const timer=window.setTimeout(()=>{const restored=restoreOfflineQueue(window.localStorage.getItem(OFFLINE_MISSION_QUEUE_KEY));persistOfflineQueue(restored);if(restored.length)setOfflineStatus('pending');},0);return()=>window.clearTimeout(timer);},[persistOfflineQueue]);
+ useEffect(()=>{const online=()=>void syncOffline();window.addEventListener('online',online);return()=>window.removeEventListener('online',online);},[syncOffline]);
+ useEffect(()=>{if(!mission||mission.pendingSync||!offlineQueue.length)return;const timer=window.setTimeout(()=>{try{const projected=projectOfflineQueue(mission,offlineQueue) as MissionProjection;missionRef.current=projected;setMission(projected);}catch{setOfflineStatus('adult-review');}},0);return()=>window.clearTimeout(timer);},[mission,offlineQueue]);
+ useEffect(()=>{if(mission&&offlineQueue.length&&offlineStatus==='pending'&&navigator.onLine)void syncOffline();},[mission,offlineQueue.length,offlineStatus,syncOffline]);
  useEffect(()=>{let current=true;void loadInitialAccess(fetch,readTrainingResponse).then(result=>{if(!current)return;if(result.kind==='player'){setPlayer(result.player as PlayerProjection);setMission(result.mission as MissionProjection);setProfiles([]);setMode('signed-in');setResumeFirstValue(true);setShowFirstValue(true);}else if(result.kind==='adult'){const adultProfiles=result.profiles as Profile[];setProfiles(adultProfiles);setActive(activeAdultProfileId(adultProfiles));setMode('signed-in');}else{setMode('guest');setProfiles([]);}setError('');}).catch(e=>{if(!current)return;setError(e instanceof Error?e.message:'Cannot load training');setMode('error');});return()=>{current=false;};},[]);
  useEffect(()=>{const sync=()=>{const next=parseTrainingLocation(window.location.search,sessionDrillIds,playerMode?'player':'adult');setTab(next.view);setSelected(next.drill);};sync();window.addEventListener('popstate',sync);return()=>window.removeEventListener('popstate',sync);},[sessionDrillIds,playerMode]);
  async function act(action:Action){
@@ -126,7 +144,14 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
     }else if(action.type==='stop')missionAction='safety-stop';
     else if(action.drillId)details.activityKey=action.drillId;
     if(action.reason)details.reason=action.reason;
-    const projected=await requestMissionMutation(mission,missionAction,details);setMission(projected);
+    try{const projected=await requestMissionMutation(mission,missionAction,details);missionRef.current=projected;setMission(projected);}
+    catch(requestError){
+     if(!(requestError&&typeof requestError==='object'&&'retryable' in requestError&&requestError.retryable===true))throw requestError;
+     const queued=createOfflineMutation(mission,missionAction,details);const nextQueue=enqueueOfflineMutation(queueRef.current,queued);persistOfflineQueue(nextQueue);
+     const optimistic=applyOfflineMutation(mission,queued) as MissionProjection;missionRef.current=optimistic;setMission(optimistic);setOfflineStatus('pending');
+     if(missionAction==='safety-stop')setPlayer(current=>current?{...current,training:{...current.training,safetyStopped:true}}:current);
+     return true;
+    }
     if(['safety-stop','complete-mission'].includes(missionAction)){const refreshed=await fetchPlayerProjection();if(refreshed)setPlayer(refreshed);}
     return true;
    }
@@ -145,6 +170,7 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
   <div className="tf-frame"><nav className="tf-nav" aria-label="Main navigation">{playerMode?PLAYER_NAV.map(([name,Icon])=><button key={name} aria-current={tab===name?'page':undefined} className={tab===name?'active':''} onClick={()=>navigate(name)}><Icon size={21}/><span>{name}</span></button>):NAV.map(([name,Icon])=><button key={name} aria-current={tab===name?'page':undefined} className={tab===name?'active':''} onClick={()=>navigate(name)}><Icon size={21}/><span>{name}</span></button>)}</nav>
   <section id="training-main" className="tf-main">
    {preview&&<div className="tf-notice">Preview mode • changes are not saved. <button onClick={()=>{setPreview(false);setSample(newTrainingState());}}>Exit preview</button></div>}
+   {playerMode&&offlineStatus&&<OfflineMissionStatus status={offlineStatus} count={offlineQueue.filter(item=>item.profileContextId===mission?.profileContextId).length} onSync={()=>void syncOffline()} onAdult={()=>navigate('Profile')}/>}
    {error&&<div role="alert" className="tf-error">{error} <button onClick={()=>void load()}>Reload saved progress</button></div>}
    {(tab==='Home'||tab==='Today')&&<>
     <div className="tf-heading"><div><p className="tf-kicker">{profile?.nickname||'GOALIE'} · {path.name}</p><h1>{sessionDone?'That is a session earned.':'Your next save starts here.'}</h1></div><span className="tf-level">Path {path.level}</span></div>
@@ -153,7 +179,7 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
     </section>}
     <section className="tf-day-list" aria-label="Today’s drills">{session.blocks.map((d,i)=>{const execution=playerMode?mission?.activities.find(item=>item.key===d.id):null;const done=playerMode?['completed','skipped'].includes(execution?.status||''):isDrillDone(state,session,d);const locked=Boolean(playerMode&&execution&&execution.ordinal>(mission?.currentActivityIndex??0)&&!done);return <button key={d.id} disabled={locked} onClick={()=>navigate(playerMode?'Today':'Home',d.id)} className="tf-drill-row"><span className={done?'tf-number done':'tf-number'}>{done?<Check size={19}/>:i+1}</span><span><strong>{d.name}</strong><small>{locked?'Finish the activity above first':`${d.sets} ${d.sets===1?'set':'sets'} · ${d.target} · ${d.minutes} min`}</small></span><ChevronRight size={19}/></button>;})}</section>
     {completed===session.blocks.length&&!sessionDone&&<button className="tf-primary" disabled={busy} onClick={async()=>{if(await act({type:playerMode?'complete-mission':'finish'}))celebrate('Full training session');}}><Trophy size={19}/>{playerMode?'Finish mission':'Finish and earn your session badge'}</button>}
-    {playerMode?<section className="tf-reward"><span className="tf-reward-icon"><Check size={32}/></span><div><p className="tf-kicker">PROGRESS SAVES AS YOU GO</p><h3>{sessionDone?'Mission complete':'Finish every activity with control'}</h3><p>{sessionDone?'Your completed mission is saved. XP and progression are calculated by the next verified system.':'Reloading or leaving will not erase confirmed sets.'}</p></div></section>:<section className="tf-reward"><span className="tf-reward-icon"><Trophy size={32}/></span><div><p className="tf-kicker">{state.sessions.length?'EARNED THROUGH TRAINING':'YOUR FIRST REWARD'}</p><h3>{state.sessions.length?`${state.sessions.length} session badges earned`:'The First Save badge'}</h3><p>{state.sessions.length?'Every badge marks a completed session—not time spent in the app.':'Complete every drill and finish the session to earn it.'}</p></div></section>}
+    {playerMode?<section className="tf-reward"><span className="tf-reward-icon"><Check size={32}/></span><div><p className="tf-kicker">PROGRESS SAVES AS YOU GO</p><h3>{sessionDone?'Mission complete':'Finish every activity with control'}</h3><p>{sessionDone?(mission?.pendingSync?'Mission complete on this device. Connect to confirm it with your adult account.':'Your completed mission is saved. XP and progression are calculated by the next verified system.'):(mission?.pendingSync?'Recent progress is stored on this device until it reconnects.':'Reloading or leaving will not erase confirmed sets.')}</p></div></section>:<section className="tf-reward"><span className="tf-reward-icon"><Trophy size={32}/></span><div><p className="tf-kicker">{state.sessions.length?'EARNED THROUGH TRAINING':'YOUR FIRST REWARD'}</p><h3>{state.sessions.length?`${state.sessions.length} session badges earned`:'The First Save badge'}</h3><p>{state.sessions.length?'Every badge marks a completed session—not time spent in the app.':'Complete every drill and finish the session to earn it.'}</p></div></section>}
     <p className="tf-fine">Planned time includes setup, demonstration, breaks, and reflection. Do not add repetitions to fill time. Other sports count toward your total workload.</p>
    </>}
    {(tab==='Train'||tab==='Journey')&&<><div className="tf-heading"><div><p className="tf-kicker">20 WEEKS · OFF-ICE ONLY</p><h1>Your development path</h1></div></div><section className="tf-path-intro"><h2>{path.name}</h2><p>{path.description}</p><strong>{path.days} days × {path.minutes} minutes each week</strong><p>Keep this commitment throughout the path. Advancing requires skill checks—not finishing weeks. Take rest days between demanding sessions.</p></section><div className="tf-weeks">{WEEKS.map((w,i)=><article key={w.number} className={i===state.week?'current':''}><span className="tf-number">{w.number}</span><div><h3>{w.name}</h3><p>{w.skills.map(id=>SKILLS.find(s=>s.id===id)?.name).join(' · ')}</p></div><span>{i===state.week?'Current':i<state.week?'Covered':'Coming up'}</span></article>)}</div></>}
@@ -165,6 +191,10 @@ export function TrainingApp({signInLink,signOutLink}:{signInLink:ReactNode;signO
   <Toaster theme="light" position="top-center" richColors/>
   {celebration&&<div className="tf-celebration" aria-hidden="true"><Shield size={40}/><strong>SAVE MADE</strong><span>{celebration}</span></div>}
  </main>;
+}
+export function OfflineMissionStatus({status,count,onSync,onAdult}:{status:string;count:number;onSync:()=>void;onAdult:()=>void}){
+ const copy=status==='syncing'?'Confirming saved progress…':status==='synced'?'Saved progress is confirmed.':status==='other-profile'?'Some saved progress belongs to another goalie. Switch back to that goalie to sync it.':status==='adult-review'?'This device kept the progress, but an adult must review it before syncing.':'Saved on this device. We’ll sync when connected.';
+ return <div className="tf-notice tf-offline-status" role="status"><span>{copy}{count>0?` ${count} ${count===1?'action':'actions'} waiting.`:''}</span><span>{['pending','adult-review'].includes(status)&&<button type="button" onClick={onSync}>Sync now</button>}{['other-profile','adult-review'].includes(status)&&<button type="button" onClick={onAdult}>Adult review</button>}</span></div>;
 }
 export function TrainingSaveError({message,onReload}:{message:string;onReload:()=>void}){return message?<div className="tf-error" role="alert"><p>{message}</p><button className="tf-secondary" onClick={onReload}>Reload saved progress</button><p className="tf-fine">The last action is not confirmed. If something hurts, stop and tell an adult regardless of save status.</p></div>:null;}
 export function DrillDetail({drill,state,session,mission,busy,readOnly,act,onDone,onExit,saveError,onReload}:{drill:Drill;state:TrainingState;session:ReturnType<typeof buildSession>;mission:MissionProjection|null;busy:boolean;readOnly:boolean;act:(a:Action)=>Promise<boolean>;onDone:()=>void;onExit:()=>void;saveError:string;onReload:()=>void}){
