@@ -40,7 +40,7 @@
 - Produces `CONTENT_VERSION`, `CONTENT_STATUSES`, `validateActivityVersion(value)`, `isPublishedActivity(value)`, `candidateActivityVersions`, and D1 tables `activity_families` / `activity_versions`.
 - Each version includes the canonical section-10 fields plus stable family, prescription and review metadata.
 
-- [ ] **Step 1: Write failing contract and schema tests**
+- [x] **Step 1: Write failing contract and schema tests**
 
 ```js
 assert.ok(engine.candidateActivityVersions.length >= 20 && engine.candidateActivityVersions.length <= 30);
@@ -50,23 +50,23 @@ assert.ok(tables.includes('activity_families'));
 assert.ok(tables.includes('activity_versions'));
 ```
 
-- [ ] **Step 2: Run the focused tests and confirm missing exports/tables fail**
+- [x] **Step 2: Run the focused tests and confirm missing exports/tables fail**
 
 Run: `node --test tests/training-content.test.mjs tests/schema-contract.test.mjs`
 
-- [ ] **Step 3: Add the normalized contract and lifecycle migration**
+- [x] **Step 3: Add the normalized contract and lifecycle migration**
 
 Use immutable `(activity_id, version)` identity, `family_id`, `payload_json`, lifecycle status, two reviewer identities/timestamps, publication/retirement timestamps, and indexes for published family/version lookup. Validation rejects unknown status, missing required fields, more than two primary cues, empty substitutions, unsupported age bands/levels, unsafe prohibited movement tags, and publication without both reviews.
 
-- [ ] **Step 4: Convert the current 15 activities and at least five additional low-demand/concept candidates to complete versioned records**
+- [x] **Step 4: Convert the current 15 activities and at least five additional low-demand/concept candidates to complete versioned records**
 
 Every candidate must contain precise setup, starting position, movement steps, reps/time, rounds, rest, success measure, result unit, plausibility, Level 1/2/3 prescriptions, substitution, safety, pain-stop rule and asset/caption references. Keep all candidates at `DEVELOPMENT_REVIEW` or `SAFETY_REVIEW`; do not fabricate reviewer approval.
 
-- [ ] **Step 5: Add a fail-closed catalog seed generator**
+- [x] **Step 5: Add a fail-closed catalog seed generator**
 
 `scripts/generate-training-content-seed.mjs` validates every input record and emits idempotent SQL only for PUBLISHED versions with complete development/safety approval metadata. It exits nonzero when an input claims publication without both reviews, and never promotes candidate status itself.
 
-- [ ] **Step 6: Run focused tests and commit**
+- [x] **Step 6: Run focused tests and commit**
 
 Run: `node --test tests/training-content.test.mjs tests/schema-contract.test.mjs`
 
@@ -82,7 +82,7 @@ Commit: `feat: define review-gated training content`
 - Consumes `ActivityVersion` records and `EligibilityContext {ageBand, level, equipment, spaces, physicalRestrictions, safetyStopped, workload, objective, requiredInputs}`.
 - Produces `evaluateActivity(activity, context) -> {eligible, prescription, substitution, reasons}` and `eligibleActivities(catalog, context)`.
 
-- [ ] **Step 1: Write a table-driven failing test for every canonical gate**
+- [x] **Step 1: Write a table-driven failing test for every canonical gate**
 
 ```js
 for (const [change, code] of cases) {
@@ -94,19 +94,19 @@ for (const [change, code] of cases) {
 
 Cover `NOT_PUBLISHED`, `AGE_BLOCKED`, `LEVEL_BLOCKED`, `EQUIPMENT_MISSING`, `SPACE_MISSING`, `PHYSICAL_RESTRICTION`, `SAFETY_STOPPED`, `WORKLOAD_BLOCKED`, `INPUT_MISSING`, `OBJECTIVE_MISMATCH`, plus equipment/space substitution success.
 
-- [ ] **Step 2: Run the focused test and confirm failure**
+- [x] **Step 2: Run the focused test and confirm failure**
 
 Run: `node --test tests/activity-eligibility.test.mjs`
 
-- [ ] **Step 3: Implement deny-by-default evaluation with stable reason codes**
+- [x] **Step 3: Implement deny-by-default evaluation with stable reason codes**
 
 The engine must never infer missing equipment, space, review, physical-readiness or publication facts. A substitution is eligible only when the substitution itself passes all remaining gates and carries a published target version.
 
-- [ ] **Step 4: Test deterministic output, unknown fields and safety precedence**
+- [x] **Step 4: Test deterministic output, unknown fields and safety precedence**
 
 Run: `node --test tests/activity-eligibility.test.mjs`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Commit: `feat: enforce activity eligibility`
 
@@ -120,23 +120,23 @@ Commit: `feat: enforce activity eligibility`
 - Consumes `MissionPlanningContext` with one optional `activePriority`, optional confirmed coach focus, optional due re-test, coverage history, duration 15/25/35, recovery/workload state, and eligible catalog.
 - Produces `MissionPlan {missionId, version, source, objective, priorityIds, orderedActivityVersions, durationMinutes, equipment, substitutions, workload, completionRules, rewardRuleVersion, explanation}` or `MissionUnavailable {code, audience, message, nextAction, explanation}`.
 
-- [ ] **Step 1: Write failing deterministic-planning tests**
+- [x] **Step 1: Write failing deterministic-planning tests**
 
 Assert identical inputs produce deep-equal plans, durations select 3/4/5 activities, unsafe/recovery contexts return one explicit next action, no more than one ACTIVE priority is accepted, a 25-minute priority plan assigns 40–60% meaningful time when eligible, and missing mapped content returns `CONTENT_REVIEW_REQUIRED` rather than unrelated work presented as priority training.
 
-- [ ] **Step 2: Run and confirm missing generator failure**
+- [x] **Step 2: Run and confirm missing generator failure**
 
 Run: `node --test tests/mission-generator.test.mjs`
 
-- [ ] **Step 3: Implement stable ranking and tie-breaking**
+- [x] **Step 3: Implement stable ranking and tie-breaking**
 
 Rank by the canonical order, then stable family/version ID. Preserve complementary warm-up/recovery work, workload caps and variety history. Do not use randomness, current clock time or a model call in selection.
 
-- [ ] **Step 4: Implement the explanation trace**
+- [x] **Step 4: Implement the explanation trace**
 
 Expose selected reason, excluded counts by stable code, substitution decisions, priority time allocation, duration/activity count and the single safe next action. Child projection receives concise stored copy; adult/debug evidence may retain rule codes without private notes.
 
-- [ ] **Step 5: Run focused tests and commit**
+- [x] **Step 5: Run focused tests and commit**
 
 Run: `node --test tests/mission-generator.test.mjs tests/activity-eligibility.test.mjs`
 
@@ -222,11 +222,11 @@ Commit: `feat: explain mission eligibility in Today`
 - Review register lists every candidate version, mapped skill/priority, age/level, equipment/space, substitution, workload, media, development review, safety review and publish decision.
 - Evidence maps SCP-004/005/006/013/017/018, GJ-02/GJ-05 and the TF-MVP-006 exit criterion to tests and observed limitations.
 
-- [ ] **Step 1: Generate a complete candidate review register from the validated catalog**
+- [x] **Step 1: Generate a complete candidate review register from the validated catalog**
 
 Every missing human review or media asset remains visibly NOT APPROVED. Do not use automated tests as youth-training approval.
 
-- [ ] **Step 2: Run the full release gate**
+- [x] **Step 2: Run the full release gate**
 
 Run: `git diff --check`
 
@@ -236,15 +236,15 @@ Run: `npx tsc --noEmit --incremental false`
 
 Run: `npm run lint`
 
-- [ ] **Step 3: Run supported browser inspection**
+- [x] **Step 3: Attempt supported browser inspection and record the environment blocker**
 
 Inspect access/sample, a seeded eligible 15/25/35 mission, substitution, unavailable-content and retired-content recovery. Record console errors and horizontal overflow; leave physical iOS/six-width validation to TF-MVP-017.
 
-- [ ] **Step 4: Perform independent code review**
+- [x] **Step 4: Perform independent code review**
 
 Review safety precedence, review-gate bypasses, deterministic repeatability, cross-player isolation, snapshot immutability, retirement, substitutions, duration/count, missing-content recovery and AI-call absence. Resolve every material P0/P1 finding and rerun affected gates.
 
-- [ ] **Step 5: Record the truthful exit decision and commit**
+- [x] **Step 5: Record the truthful exit decision and commit**
 
 TF-MVP-006 implementation may pass when the engine and all recovery paths pass, but launch content remains blocked until a qualified reviewer approves enough candidate versions to provide complete priority coverage and required instructional media. The evidence must not call unreviewed candidates PUBLISHED.
 
