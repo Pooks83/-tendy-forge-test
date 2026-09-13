@@ -5,8 +5,9 @@ import {readStoredOperation,storeOperationStatement} from './idempotency-store';
 import {productEventStatement} from './product-event-store';
 import {createMissionExecution,transitionMission} from './mission-state.mjs';
 import {GENERATOR_VERSION,generateMission} from './mission-generator.mjs';
+import {calculateCompletionPackage,PROGRESSION_RULE_VERSION} from './progression.mjs';
 import {findSafetyRetirement,loadPublishedCatalog,resolveSafetyRetirement} from './training-content-store';
-import {buildSession,normalizeTrainingState,WEEKS} from './training.mjs';
+import {buildSession,normalizeTrainingState,PATHS,WEEKS} from './training.mjs';
 
 export const MISSION_CONTENT_VERSION=GENERATOR_VERSION;
 const LEGACY_CONTENT_VERSION='tf-curriculum-v1';
@@ -22,6 +23,8 @@ type ExecutionSnapshot=GeneratedSession&{reading?:{question:string;options:strin
 type MissionRow={id:string;profile_id:string;mission_key:string;status:string;started_at:string;completed_at:string|null;updated_at:string;revision:number;current_activity_index:number;content_version:string;execution_snapshot_json:string;paused_at:string|null;interrupted_at:string|null;abandoned_at:string|null};
 type ActivityRow={id:string;mission_instance_id:string;activity_key:string;ordinal:number;status:string;result_json:string|null;rest_remaining_seconds:number;started_at:string|null;completed_at:string|null;updated_at:string;rest_completed_after_set:number};
 type ProfileStateRow={state:string;revision:number};
+type CompletionRow={id:string;rule_version:string;completed_prescribed_minutes:number;skipped_prescribed_minutes:number;total_prescribed_minutes:number;xp:number;journey_before_json:string;journey_after_json:string};
+type AttributeCreditRow={attribute_id:string;amount_units:number};
 type MutationInput={action:string;missionId:string;profileContextId:string;revision:number;activityKey?:string;remainingSeconds?:number;result?:Record<string,unknown>;reason?:string;queuedAt?:string;offlineMutationId?:string};
 type MissionResult=Record<string,string|number|boolean>;
 type ExecutionActivity={key:string;ordinal:number;status:string;result:MissionResult|null;restRemainingSeconds:number;restCompletedAfterSet:number;startedAt?:string;completedAt?:string;updatedAt?:string};
@@ -83,6 +86,18 @@ function projection(row:MissionRow,activities:ActivityRow[],now=new Date()){
   activities:activities.map(item=>{const block=snapshot.blocks?.find(candidate=>candidate.id===item.activity_key);return {key:item.activity_key,ordinal:item.ordinal,status:externalStatus(item.status),result:parseJson(item.result_json,null),restRemainingSeconds:remainingRest(row,item,now),restCompletedAfterSet:item.rest_completed_after_set,requiredSets:block?.sets??0,restSeconds:block?.restSeconds??0,...(item.started_at?{startedAt:item.started_at}:{}),...(item.completed_at?{completedAt:item.completed_at}:{})};}),
   startedAt:row.started_at,...(row.completed_at?{completedAt:row.completed_at}:{}),...(row.paused_at?{pausedAt:row.paused_at}:{}),...(row.interrupted_at?{interruptedAt:row.interrupted_at}:{}),...(row.abandoned_at?{abandonedAt:row.abandoned_at}:{}),executionSnapshot:snapshot,
  };
+}
+
+async function storedCompletionSummary(db:D1Database,row:MissionRow){
+ const completion=await db.prepare('SELECT id,rule_version,completed_prescribed_minutes,skipped_prescribed_minutes,total_prescribed_minutes,xp,journey_before_json,journey_after_json FROM mission_completion_ledger WHERE mission_instance_id=?').bind(row.id).first<CompletionRow>();
+ if(!completion)return null;
+ const attributes=(await db.prepare('SELECT attribute_id,amount_units FROM attribute_progress_ledger WHERE completion_id=? ORDER BY attribute_id').bind(completion.id).all<AttributeCreditRow>()).results;
+ const reward=await db.prepare('SELECT reward_id FROM reward_entitlements WHERE source_completion_id=? ORDER BY reward_id LIMIT 1').bind(completion.id).first<{reward_id:string}>();
+ return {classification:'CREDITED',ruleVersion:completion.rule_version,completedPrescribedMinutes:completion.completed_prescribed_minutes,skippedPrescribedMinutes:completion.skipped_prescribed_minutes,totalPrescribedMinutes:completion.total_prescribed_minutes,completionMultiplier:completion.completed_prescribed_minutes/completion.total_prescribed_minutes,xp:completion.xp,attributes:Object.fromEntries(attributes.map(item=>[item.attribute_id,item.amount_units/1000])),journeyBefore:parseJson(completion.journey_before_json,{}),journeyAfter:parseJson(completion.journey_after_json,{}),newReward:reward?.reward_id||null};
+}
+
+async function completedProjection(db:D1Database,row:MissionRow,activities:ActivityRow[]){
+ const completionSummary=await storedCompletionSummary(db,row);return completionSummary?{...projection(row,activities),completionSummary}:projection(row,activities);
 }
 
 async function safetyHold(db:D1Database,row:MissionRow,activities:ActivityRow[],player:PlayerProjection){
@@ -190,7 +205,7 @@ function transitionAction(input:MutationInput){
  }
 }
 
-function legacyProjection(raw:string,snapshot:Session,next:MissionExecution,timestamp:string,safetyStopped=false){
+function legacyProjection(raw:string,snapshot:Session,next:MissionExecution,timestamp:string,safetyStopped=false,journeyAfter?:{pathId:string;week:number;day:number;cycle:number}){
  const state=normalizeTrainingState(parseJson(raw,{}));const sets={...state.sets};const rests={...state.rests};const answers={...state.answers};
  for(const activity of next.activities){
   const block=snapshot.blocks.find(item=>item.id===activity.key);if(!block)continue;const key=`${next.missionId}:${activity.key}`;
@@ -199,7 +214,7 @@ function legacyProjection(raw:string,snapshot:Session,next:MissionExecution,time
   if(activity.key==='read'&&typeof activity.result?.answer==='number')answers[next.missionId]={choice:activity.result.answer,correct:activity.result.correct===true};
  }
  const sessions=[...state.sessions];if(next.status==='COMPLETED'&&!sessions.some(item=>item.id===next.missionId))sessions.push({id:next.missionId,date:timestamp,pathId:snapshot.pathId,week:snapshot.week,day:snapshot.day});
- return {...state,sets,rests,answers,sessions,safetyStopped:safetyStopped||state.safetyStopped};
+ return {...state,...(journeyAfter||{}),sets,rests,answers,sessions,safetyStopped:safetyStopped||state.safetyStopped};
 }
 
 function eventFor(input:MutationInput){return ({'start-activity':'activity_started','complete-activity':'activity_completed','skip-activity':'activity_skipped','complete-mission':'mission_completed','abandon':'mission_abandoned'} as Record<string,string>)[input.action]||null;}
@@ -257,6 +272,7 @@ export async function mutateCurrentMission(db:D1Database,identity:AdultIdentity,
  if(input.profileContextId!==active.profileId)throw canonicalError('PLAYER_CONTEXT_REQUIRED','Return to the goalie this progress belongs to before syncing it.',409);
  const operation=mutationOperation(active.profileId,input);const stored=await readStoredOperation(db,identity.id,operationKey,operation);if(stored)return {data:stored,replayed:true};
  const loaded=await loadMission(db,identity,active.profileId,input.missionId,sessionForMission(input.missionId,active.session));if(!loaded)throw canonicalError('MISSION_NOT_FOUND','Start today’s mission before recording progress.',404);
+ if(input.action==='complete-mission'&&internalStatus(loaded.row.status)==='COMPLETED')return {data:await completedProjection(db,loaded.row,loaded.activities),replayed:true};
  if(input.action==='replace-retired-activity')return adoptSafetyReplacement(db,identity,player,input,operationKey,operation,loaded,now);
  const hold=await safetyHold(db,loaded.row,loaded.activities,player);if(hold)throw canonicalError(hold.code,hold.message,409);
  if(input.revision!==loaded.row.revision)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
@@ -275,24 +291,36 @@ export async function mutateCurrentMission(db:D1Database,identity:AdultIdentity,
  if(input.action==='end-rest'&&before.activities[before.currentActivityIndex]?.restRemainingSeconds>0)throw canonicalError('INVALID_STATE_TRANSITION','Finish the listed rest before continuing.',409);
  const next=transitionMission(before,transitionAction(input),timestamp) as MissionExecution;
  const profile=await db.prepare('SELECT state,revision FROM training_profiles WHERE id=?').bind(active.profileId).first<ProfileStateRow>();if(!profile)throw canonicalError('PLAYER_CONTEXT_REQUIRED','Choose your goalie again.',409);
- const legacy=legacyProjection(profile.state,snapshot,next,timestamp,input.action==='safety-stop');const nextRows=next.activities;
+ const priorState=normalizeTrainingState(parseJson(profile.state,{}));const path=PATHS.find(item=>item.id===priorState.pathId);
+ const progression=input.action==='complete-mission'&&loaded.row.content_version===MISSION_CONTENT_VERSION?calculateCompletionPackage({missionInstanceId:loaded.row.id,profileId:active.profileId,snapshot,activities:next.activities,journey:{pathId:priorState.pathId,week:priorState.week,day:priorState.day,cycle:priorState.cycle||0,daysPerWeek:path?.days||0,weeksPerCycle:WEEKS.length}}):null;
+ const priorReward=progression?.firstSaveEligible?await db.prepare('SELECT reward_id FROM reward_entitlements WHERE profile_id=? AND reward_id=?').bind(active.profileId,'FIRST_SAVE').first<{reward_id:string}>():null;
+ const completionId=progression?crypto.randomUUID():null;const newReward=Boolean(progression?.firstSaveEligible&&!priorReward);
+ const completionSummary=progression?{classification:'CREDITED',ruleVersion:progression.ruleVersion,completedPrescribedMinutes:progression.completedPrescribedMinutes,skippedPrescribedMinutes:progression.skippedPrescribedMinutes,totalPrescribedMinutes:progression.totalPrescribedMinutes,completionMultiplier:progression.completionMultiplier,xp:progression.xp,attributes:Object.fromEntries(Object.entries(progression.attributeUnits).map(([id,units])=>[id,(units as number)/1000])),journeyBefore:progression.journeyBefore,journeyAfter:progression.journeyAfter,newReward:newReward?'FIRST_SAVE':null}:input.action==='complete-mission'?{classification:'LEGACY_UNCREDITED',ruleVersion:null,completedPrescribedMinutes:0,skippedPrescribedMinutes:0,totalPrescribedMinutes:0,completionMultiplier:0,xp:0,attributes:{},journeyBefore:{pathId:priorState.pathId,week:priorState.week,day:priorState.day,cycle:priorState.cycle||0},journeyAfter:{pathId:priorState.pathId,week:priorState.week,day:priorState.day,cycle:priorState.cycle||0},newReward:null}:null;
+ const legacy=legacyProjection(profile.state,snapshot,next,timestamp,input.action==='safety-stop',progression?.journeyAfter);const nextRows=next.activities;
  const projectedRows=loaded.activities.map((row,index)=>({...row,status:nextRows[index].status,result_json:nextRows[index].result?JSON.stringify(nextRows[index].result):null,rest_remaining_seconds:nextRows[index].restRemainingSeconds||0,rest_completed_after_set:nextRows[index].restCompletedAfterSet||0,started_at:nextRows[index].startedAt||null,completed_at:nextRows[index].completedAt||null,updated_at:timestamp}));
- const data=projection({...loaded.row,status:next.status,revision:next.revision,current_activity_index:next.currentActivityIndex,completed_at:next.completedAt||null,updated_at:timestamp,paused_at:next.pausedAt||loaded.row.paused_at,interrupted_at:next.interruptedAt||loaded.row.interrupted_at,abandoned_at:next.abandonedAt||loaded.row.abandoned_at},projectedRows);
+ const projected=projection({...loaded.row,status:next.status,revision:next.revision,current_activity_index:next.currentActivityIndex,completed_at:next.completedAt||null,updated_at:timestamp,paused_at:next.pausedAt||loaded.row.paused_at,interrupted_at:next.interruptedAt||loaded.row.interrupted_at,abandoned_at:next.abandonedAt||loaded.row.abandoned_at},projectedRows);const data=completionSummary?{...projected,completionSummary}:projected;
  const eventName=eventFor(input);const analytics=await db.prepare('SELECT analytics_allowed FROM privacy_preferences WHERE profile_id=?').bind(active.profileId).first<{analytics_allowed:number}>();
  const condition='EXISTS(SELECT 1 FROM mission_instances WHERE id=? AND revision=?) AND EXISTS(SELECT 1 FROM training_profiles WHERE id=? AND revision=?)';
  const conditionBindings=[loaded.row.id,next.revision,active.profileId,profile.revision+1];
  const activityStatements=nextRows.map((activity,index)=>db.prepare(`UPDATE activity_instances SET status=?,result_json=?,rest_remaining_seconds=?,rest_completed_after_set=?,started_at=?,completed_at=?,updated_at=? WHERE id=? AND ${condition}`).bind(activity.status,activity.result?JSON.stringify(activity.result):null,activity.restRemainingSeconds||0,activity.restCompletedAfterSet||0,activity.startedAt||null,activity.completedAt||null,timestamp,loaded.activities[index].id,loaded.row.id,next.revision,active.profileId,profile.revision+1));
+ const progressionStatements=progression&&completionId?[
+  db.prepare(`INSERT INTO mission_completion_ledger(id,mission_instance_id,profile_id,rule_version,content_version,completed_prescribed_minutes,skipped_prescribed_minutes,total_prescribed_minutes,completion_multiplier_milli,xp,xp_units,journey_before_json,journey_after_json,source_operation_key,completed_at) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE ${condition}`).bind(completionId,loaded.row.id,active.profileId,PROGRESSION_RULE_VERSION,loaded.row.content_version,progression.completedPrescribedMinutes,progression.skippedPrescribedMinutes,progression.totalPrescribedMinutes,Math.round(progression.completionMultiplier*1000),progression.xp,progression.xpUnits,JSON.stringify(progression.journeyBefore),JSON.stringify(progression.journeyAfter),operationKey,timestamp,...conditionBindings),
+  db.prepare(`INSERT INTO xp_ledger(id,profile_id,completion_id,logical_source,amount,amount_units,rule_version,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${condition}`).bind(crypto.randomUUID(),active.profileId,completionId,`mission:${loaded.row.id}`,progression.xp,progression.xpUnits,PROGRESSION_RULE_VERSION,timestamp,...conditionBindings),
+  ...Object.entries(progression.attributeUnits).map(([attributeId,amountUnits])=>db.prepare(`INSERT INTO attribute_progress_ledger(completion_id,profile_id,attribute_id,amount_units,rule_version,created_at) SELECT ?,?,?,?,?,? WHERE ${condition}`).bind(completionId,active.profileId,attributeId,amountUnits,PROGRESSION_RULE_VERSION,timestamp,...conditionBindings)),
+  ...(newReward?[db.prepare(`INSERT INTO reward_entitlements(profile_id,reward_id,source_completion_id,rule_version,awarded_at) SELECT ?,?,?,?,? WHERE ${condition}`).bind(active.profileId,'FIRST_SAVE',completionId,PROGRESSION_RULE_VERSION,timestamp,...conditionBindings)]:[]),
+ ]:[];
  try{
   const results=await db.batch([
    db.prepare('UPDATE mission_instances SET status=?,revision=?,current_activity_index=?,completed_at=?,paused_at=?,interrupted_at=?,abandoned_at=?,updated_at=? WHERE id=? AND revision=? AND EXISTS(SELECT 1 FROM training_profiles WHERE id=? AND revision=?)').bind(next.status,next.revision,next.currentActivityIndex,next.completedAt||null,next.pausedAt||loaded.row.paused_at,next.interruptedAt||loaded.row.interrupted_at,next.abandonedAt||loaded.row.abandoned_at,timestamp,loaded.row.id,loaded.row.revision,active.profileId,profile.revision),
    db.prepare('UPDATE training_profiles SET state=?,revision=revision+1,updated_at=? WHERE id=? AND revision=? AND EXISTS(SELECT 1 FROM mission_instances WHERE id=? AND revision=?)').bind(JSON.stringify(legacy),timestamp,active.profileId,profile.revision,loaded.row.id,next.revision),
+   ...progressionStatements,
    ...activityStatements,
    db.prepare(`INSERT INTO audit_events(id,actor_account_id,profile_id,event_type,metadata_json,created_at) SELECT ?,?,?,?,?,? WHERE ${condition}`).bind(crypto.randomUUID(),identity.id,active.profileId,`MISSION_${input.action.replaceAll('-','_').toUpperCase()}`,JSON.stringify({missionId:input.missionId,activityKey:input.activityKey||null,revision:next.revision}),timestamp,loaded.row.id,next.revision,active.profileId,profile.revision+1),
    ...(eventName&&analytics?.analytics_allowed===1?[db.prepare(`INSERT OR IGNORE INTO product_events(id,logical_key,event_name,account_context_id,profile_context_id,app_version,build_version,config_version,metadata_json,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${condition}`).bind(crypto.randomUUID(),`${eventName}:${active.profileId}:${input.missionId}:${input.activityKey||'mission'}`,eventName,identity.id,active.profileId,'0.1.0',process.env.SITES_BUILD_ID||process.env.GIT_COMMIT_SHA||'local-unpublished','tf-v1.4',JSON.stringify({missionId:input.missionId,activityKey:input.activityKey||null}),timestamp,loaded.row.id,next.revision,active.profileId,profile.revision+1)]:[]),
    ...(analytics?.analytics_allowed===1?offlineEventStatements(db,identity,active.profileId,input,timestamp,condition,conditionBindings):[]),
    db.prepare(`INSERT INTO idempotency_records(account_id,operation_key,operation,response_json,created_at) SELECT ?,?,?,?,? WHERE ${condition}`).bind(identity.id,operationKey,operation,JSON.stringify(data),timestamp,loaded.row.id,next.revision,active.profileId,profile.revision+1),
   ]);
-  if(!results[0].meta.changes||!results[1].meta.changes)throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
+  if(!results[0].meta.changes||!results[1].meta.changes||progressionStatements.some((_,index)=>index<2&&!results[index+2].meta.changes))throw canonicalError('STALE_REVISION','Progress changed on another device. Reload before continuing.',409);
   return {data,replayed:false};
- }catch(error){const replay=await readStoredOperation(db,identity.id,operationKey,operation);if(replay)return {data:replay,replayed:true};throw error;}
+ }catch(error){const replay=await readStoredOperation(db,identity.id,operationKey,operation);if(replay)return {data:replay,replayed:true};if(input.action==='complete-mission'){const current=await loadMission(db,identity,active.profileId,input.missionId,sessionForMission(input.missionId,active.session));if(current&&internalStatus(current.row.status)==='COMPLETED'&&await storedCompletionSummary(db,current.row))return {data:await completedProjection(db,current.row,current.activities),replayed:true};}throw error;}
 }
