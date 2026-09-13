@@ -86,3 +86,29 @@ test('required relationship queries use declared indexes',()=>{
  assert.match(consentPlan,/idx_consent_records_profile/);
  assert.match(auditPlan,/idx_audit_events_profile_created/);
 });
+
+test('progression ledgers are versioned append-only and reject duplicate logical awards',()=>{
+ const db=migratedDatabase();
+ const expected={
+  progression_rule_versions:['version','config_json','created_at'],
+  mission_completion_ledger:['id','mission_instance_id','profile_id','rule_version','content_version','completed_prescribed_minutes','skipped_prescribed_minutes','total_prescribed_minutes','completion_multiplier_milli','xp','xp_units','journey_before_json','journey_after_json','source_operation_key','completed_at'],
+  xp_ledger:['id','profile_id','completion_id','logical_source','amount','amount_units','rule_version','created_at'],
+  attribute_progress_ledger:['completion_id','profile_id','attribute_id','amount_units','rule_version','created_at'],
+  reward_entitlements:['profile_id','reward_id','source_completion_id','rule_version','awarded_at'],
+ };
+ for(const [table,columns] of Object.entries(expected))assert.deepEqual(db.prepare(`PRAGMA table_info('${table}')`).all().map(row=>row.name),columns,`${table} columns`);
+ const rule=db.prepare('SELECT version,config_json FROM progression_rule_versions WHERE version=?').get('tf-progression-v1');
+ assert.equal(rule.version,'tf-progression-v1');assert.equal(JSON.parse(rule.config_json).xpPerCompletedMinute,1);
+ const at='2026-09-13T12:00:00.000Z';
+ db.prepare("INSERT INTO training_profiles(id,owner_id,nickname,team,age_band,state,created_at) VALUES(?,?,?,?,?,?,?)").run('p1','a1','Goalie','','10–12','{}',at);
+ db.prepare('INSERT INTO mission_instances(id,profile_id,mission_key,status,started_at,updated_at) VALUES(?,?,?,?,?,?)').run('mi-1','p1','foundation:0:0','COMPLETED',at,at);
+ const completion=['c1','mi-1','p1','tf-progression-v1','tf-mission-generator-v1',10,5,15,667,10,10000,'{"pathId":"foundation","week":0,"day":0,"cycle":0}','{"pathId":"foundation","week":0,"day":1,"cycle":0}','op-1',at];
+ db.prepare('INSERT INTO mission_completion_ledger VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(...completion);
+ assert.throws(()=>db.prepare('INSERT INTO mission_completion_ledger VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run('c2',...completion.slice(1)),/UNIQUE|constraint/i);
+ db.prepare('INSERT INTO xp_ledger VALUES(?,?,?,?,?,?,?,?)').run('x1','p1','c1','mission:mi-1',10,10000,'tf-progression-v1',at);
+ assert.throws(()=>db.prepare('INSERT INTO xp_ledger VALUES(?,?,?,?,?,?,?,?)').run('x2','p1','c1','mission:mi-1',10,10000,'tf-progression-v1',at),/UNIQUE|constraint/i);
+ db.prepare('INSERT INTO attribute_progress_ledger VALUES(?,?,?,?,?,?)').run('c1','p1','BALANCE',10000,'tf-progression-v1',at);
+ assert.throws(()=>db.prepare('INSERT INTO attribute_progress_ledger VALUES(?,?,?,?,?,?)').run('c1','p1','BALANCE',1,'tf-progression-v1',at),/UNIQUE|constraint/i);
+ db.prepare('INSERT INTO reward_entitlements VALUES(?,?,?,?,?)').run('p1','FIRST_SAVE','c1','tf-progression-v1',at);
+ assert.throws(()=>db.prepare('INSERT INTO reward_entitlements VALUES(?,?,?,?,?)').run('p1','FIRST_SAVE','c1','tf-progression-v1',at),/UNIQUE|constraint/i);
+});

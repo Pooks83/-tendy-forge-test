@@ -57,3 +57,23 @@ export const missionInstances=sqliteTable('mission_instances',{
 export const activityInstances=sqliteTable('activity_instances',{
  id:text('id').primaryKey(),missionInstanceId:text('mission_instance_id').notNull().references(()=>missionInstances.id,{onDelete:'cascade'}),activityKey:text('activity_key').notNull(),ordinal:integer('ordinal').notNull(),status:text('status').notNull(),resultJson:text('result_json'),restRemainingSeconds:integer('rest_remaining_seconds').notNull().default(0),startedAt:text('started_at'),completedAt:text('completed_at'),updatedAt:text('updated_at').notNull(),restCompletedAfterSet:integer('rest_completed_after_set').notNull().default(0),
 },t=>[uniqueIndex('idx_activity_instances_mission_ordinal').on(t.missionInstanceId,t.ordinal),uniqueIndex('idx_activity_instances_mission_key').on(t.missionInstanceId,t.activityKey)]);
+
+export const progressionRuleVersions=sqliteTable('progression_rule_versions',{
+ version:text('version').primaryKey(),configJson:text('config_json').notNull(),createdAt:text('created_at').notNull(),
+});
+
+export const missionCompletionLedger=sqliteTable('mission_completion_ledger',{
+ id:text('id').primaryKey(),missionInstanceId:text('mission_instance_id').notNull().references(()=>missionInstances.id,{onDelete:'cascade'}),profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),ruleVersion:text('rule_version').notNull().references(()=>progressionRuleVersions.version),contentVersion:text('content_version').notNull(),completedPrescribedMinutes:integer('completed_prescribed_minutes').notNull(),skippedPrescribedMinutes:integer('skipped_prescribed_minutes').notNull(),totalPrescribedMinutes:integer('total_prescribed_minutes').notNull(),completionMultiplierMilli:integer('completion_multiplier_milli').notNull(),xp:integer('xp').notNull(),xpUnits:integer('xp_units').notNull(),journeyBeforeJson:text('journey_before_json').notNull(),journeyAfterJson:text('journey_after_json').notNull(),sourceOperationKey:text('source_operation_key').notNull(),completedAt:text('completed_at').notNull(),
+},t=>[uniqueIndex('idx_mission_completion_instance').on(t.missionInstanceId),index('idx_mission_completion_profile_time').on(t.profileId,t.completedAt)]);
+
+export const xpLedger=sqliteTable('xp_ledger',{
+ id:text('id').primaryKey(),profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),completionId:text('completion_id').notNull().references(()=>missionCompletionLedger.id,{onDelete:'cascade'}),logicalSource:text('logical_source').notNull(),amount:integer('amount').notNull(),amountUnits:integer('amount_units').notNull(),ruleVersion:text('rule_version').notNull().references(()=>progressionRuleVersions.version),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('idx_xp_ledger_logical_source').on(t.logicalSource),index('idx_xp_ledger_profile_time').on(t.profileId,t.createdAt)]);
+
+export const attributeProgressLedger=sqliteTable('attribute_progress_ledger',{
+ completionId:text('completion_id').notNull().references(()=>missionCompletionLedger.id,{onDelete:'cascade'}),profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),attributeId:text('attribute_id').notNull(),amountUnits:integer('amount_units').notNull(),ruleVersion:text('rule_version').notNull().references(()=>progressionRuleVersions.version),createdAt:text('created_at').notNull(),
+},t=>[primaryKey({columns:[t.completionId,t.attributeId]}),index('idx_attribute_progress_profile').on(t.profileId,t.attributeId)]);
+
+export const rewardEntitlements=sqliteTable('reward_entitlements',{
+ profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),rewardId:text('reward_id').notNull(),sourceCompletionId:text('source_completion_id').notNull().references(()=>missionCompletionLedger.id,{onDelete:'cascade'}),ruleVersion:text('rule_version').notNull().references(()=>progressionRuleVersions.version),awardedAt:text('awarded_at').notNull(),
+},t=>[primaryKey({columns:[t.profileId,t.rewardId]})]);
