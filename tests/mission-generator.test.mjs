@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {candidateActivityVersions} from '../lib/training-content.mjs';
 
 const generator=await import('../lib/mission-generator.mjs').catch(()=>({}));
-const reviewed=item=>({...item,contentStatus:'PUBLISHED',developmentReview:{reviewerId:'development-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},safetyReview:{reviewerId:'qualified-safety-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},publishedAt:'2026-09-12T00:00:00.000Z'});
+const reviewed=item=>({...item,developmentAttributeIds:['BALANCE'],contentStatus:'PUBLISHED',developmentReview:{reviewerId:'development-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},safetyReview:{reviewerId:'qualified-safety-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},publishedAt:'2026-09-12T00:00:00.000Z'});
 const catalog=candidateActivityVersions.map(reviewed);
 const context=overrides=>({profileContextId:'player-1',planKey:'foundation:0:0',durationMinutes:25,ageBand:'10–12',level:1,equipment:['tennis-ball','wall-space','cones'],spaces:['small-indoor'],physicalRestrictions:[],safetyStopped:false,workload:{status:'ready',maxActivityMinutes:10},requiredInputs:[],activePriorities:[],coachFocus:null,dueRetest:null,coverageHistory:[],varietyHistory:[],catalog,rewardRuleVersion:'tf-reward-v1',...overrides});
 
@@ -11,6 +11,7 @@ test('identical planning inputs produce the same immutable mission plan',()=>{
  const first=generator.generateMission(context({}));const second=generator.generateMission(context({catalog:[...catalog].reverse()}));
  assert.deepEqual(first,second);assert.equal(first.kind,'mission');assert.equal(first.missionId,'foundation:0:0');assert.equal(first.version,generator.GENERATOR_VERSION);assert.equal(first.rewardRuleVersion,'tf-reward-v1');
  assert.equal(first.explanation.activityCount,4);assert.equal(first.explanation.durationMinutes,25);assert.equal(first.orderedActivityVersions.length,4);
+ assert.deepEqual(first.orderedActivityVersions[0].developmentAttributeIds,['BALANCE']);
 });
 
 test('canonical duration selects three four or five eligible activities',()=>{

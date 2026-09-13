@@ -68,6 +68,7 @@ test('mission start snapshots ordered execution and GET returns the authoritativ
   assert.equal(started.data.activities[0].status,'ready');
   const row=await db.prepare('SELECT execution_snapshot_json,current_activity_index,revision FROM mission_instances WHERE profile_id=?').bind(profileId).first();
   assert.equal(JSON.parse(row.execution_snapshot_json).blocks.length,3);
+  assert.deepEqual(JSON.parse(row.execution_snapshot_json).blocks[0].developmentAttributeIds,['BALANCE']);
   assert.deepEqual({current_activity_index:row.current_activity_index,revision:row.revision},{current_activity_index:0,revision:1});
   assert.equal((await db.prepare('SELECT count(*) AS n FROM activity_instances WHERE mission_instance_id=?').bind(started.data.id).first()).n,3);
   const profile=await db.prepare('SELECT state FROM training_profiles WHERE id=?').bind(profileId).first();

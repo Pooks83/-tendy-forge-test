@@ -1,6 +1,6 @@
 import {candidateActivityVersions,publishedActivityRows} from '../../lib/training-content.mjs';
 
-const review=item=>({...item,contentStatus:'PUBLISHED',developmentReview:{reviewerId:'development-fixture',reviewedAt:'2026-09-12T00:00:00.000Z'},safetyReview:{reviewerId:'safety-fixture',reviewedAt:'2026-09-12T00:00:00.000Z'},publishedAt:'2026-09-12T00:00:00.000Z'});
+const review=item=>({...item,developmentAttributeIds:['BALANCE'],contentStatus:'PUBLISHED',developmentReview:{reviewerId:'development-fixture',reviewedAt:'2026-09-12T00:00:00.000Z'},safetyReview:{reviewerId:'safety-fixture',reviewedAt:'2026-09-12T00:00:00.000Z'},publishedAt:'2026-09-12T00:00:00.000Z'});
 
 export async function seedPublishedContent(db,items=candidateActivityVersions){
  const approved=items.map(review);const rows=publishedActivityRows(approved);const now='2026-09-12T00:00:00.000Z';
