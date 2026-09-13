@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {candidateActivityVersions} from '../lib/training-content.mjs';
 
 const eligibility=await import('../lib/activity-eligibility.mjs').catch(()=>({}));
-const reviewed=item=>({...item,contentStatus:'PUBLISHED',developmentReview:{reviewerId:'development-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},safetyReview:{reviewerId:'qualified-safety-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},publishedAt:'2026-09-12T00:00:00.000Z'});
+const reviewed=item=>({...item,developmentAttributeIds:['BALANCE'],contentStatus:'PUBLISHED',developmentReview:{reviewerId:'development-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},safetyReview:{reviewerId:'qualified-safety-reviewer',reviewedAt:'2026-09-12T00:00:00.000Z'},publishedAt:'2026-09-12T00:00:00.000Z'});
 const activity=reviewed(candidateActivityVersions.find(item=>item.activityId==='two-hand-wall-catch'));
 const context=overrides=>({ageBand:'10–12',level:1,equipment:['tennis-ball','wall-space'],spaces:['small-indoor'],physicalRestrictions:[],safetyStopped:false,workload:{status:'ready',maxActivityMinutes:10},objective:{technicalSkillIds:[10]},requiredInputs:[],...overrides});
 

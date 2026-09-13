@@ -31,10 +31,10 @@ test("forwards progress semantics to the primitive", async () => {
 });
 
 test('authoritative progression renders XP attributes journey and earned entitlements without an ability rating',async()=>{
-  const module=await vite.ssrLoadModule('/components/tendie-forge/progression-panel.tsx').catch(()=>({}));
-  assert.equal(typeof module.ProgressionPanel,'function');
+  const loaded=await vite.ssrLoadModule('/components/tendie-forge/progression-panel.tsx').catch(()=>({}));
+  assert.equal(typeof loaded.ProgressionPanel,'function');
   const projection={profileContextId:'p1',ruleVersion:'tf-progression-v1',totalXp:27,attributes:{TRACKING:6,HANDS:3,BALANCE:5,EXPLOSIVENESS:4,STRENGTH:2,MOBILITY:1,CONDITIONING:4,MINDSET:2},journey:{pathId:'foundation',week:1,day:2,cycle:0},rewards:[{id:'FIRST_SAVE',awardedAt:'2026-09-13T12:00:00.000Z'}],recentCompletions:[{missionId:'foundation:1:1',completedAt:'2026-09-13T12:00:00.000Z',completedPrescribedMinutes:12,skippedPrescribedMinutes:3,xp:12,ruleVersion:'tf-progression-v1'}],meaning:'Development work only — not a goalie ability or game-performance score.'};
-  const html=renderToStaticMarkup(React.createElement(module.ProgressionPanel,{projection,loading:false,error:'',onRetry:()=>{}}));
+  const html=renderToStaticMarkup(React.createElement(loaded.ProgressionPanel,{projection,loading:false,error:'',onRetry:()=>{}}));
   assert.match(html,/27 XP/);assert.match(html,/Week 2 · Session 3/);assert.match(html,/First Save/);
   for(const label of ['Tracking','Hands','Balance','Explosiveness','Strength','Mobility','Conditioning','Mindset'])assert.match(html,new RegExp(label));
   assert.match(html,/Development work only/);assert.match(html,/not a goalie ability or game-performance score/);
@@ -42,14 +42,14 @@ test('authoritative progression renders XP attributes journey and earned entitle
 });
 
 test('progression states distinguish loading retry empty reward and zero-XP completion',async()=>{
-  const module=await vite.ssrLoadModule('/components/tendie-forge/progression-panel.tsx').catch(()=>({}));
-  const loading=renderToStaticMarkup(React.createElement(module.ProgressionPanel,{projection:null,loading:true,error:'',onRetry:()=>{}}));assert.match(loading,/Loading your progress/);
-  const failed=renderToStaticMarkup(React.createElement(module.ProgressionPanel,{projection:null,loading:false,error:'Progress unavailable.',onRetry:()=>{}}));assert.match(failed,/Progress unavailable/);assert.match(failed,/Try again/);
+  const loaded=await vite.ssrLoadModule('/components/tendie-forge/progression-panel.tsx').catch(()=>({}));
+  const loading=renderToStaticMarkup(React.createElement(loaded.ProgressionPanel,{projection:null,loading:true,error:'',onRetry:()=>{}}));assert.match(loading,/Loading your progress/);
+  const failed=renderToStaticMarkup(React.createElement(loaded.ProgressionPanel,{projection:null,loading:false,error:'Progress unavailable.',onRetry:()=>{}}));assert.match(failed,/Progress unavailable/);assert.match(failed,/Try again/);
   const empty={profileContextId:'p1',ruleVersion:'tf-progression-v1',totalXp:0,attributes:{TRACKING:0,HANDS:0,BALANCE:0,EXPLOSIVENESS:0,STRENGTH:0,MOBILITY:0,CONDITIONING:0,MINDSET:0},journey:{pathId:'foundation',week:0,day:0,cycle:0},rewards:[],recentCompletions:[],meaning:'Development work only — not a goalie ability or game-performance score.'};
-  const noReward=renderToStaticMarkup(React.createElement(module.ProgressionPanel,{projection:empty,loading:false,error:'',onRetry:()=>{}}));assert.doesNotMatch(noReward,/First Save/);assert.match(noReward,/Complete your first mission/);
+  const noReward=renderToStaticMarkup(React.createElement(loaded.ProgressionPanel,{projection:empty,loading:false,error:'',onRetry:()=>{}}));assert.doesNotMatch(noReward,/First Save/);assert.match(noReward,/Complete your first mission/);
   const credited={classification:'CREDITED',ruleVersion:'tf-progression-v1',completedPrescribedMinutes:10,skippedPrescribedMinutes:5,totalPrescribedMinutes:15,completionMultiplier:2/3,xp:10,attributes:{BALANCE:4,TRACKING:6},journeyBefore:{pathId:'foundation',week:0,day:0,cycle:0},journeyAfter:{pathId:'foundation',week:0,day:1,cycle:0},newReward:'FIRST_SAVE'};
-  const win=renderToStaticMarkup(React.createElement(module.CompletionProgress,{summary:credited,pendingSync:false}));assert.match(win,/10 XP earned/);assert.match(win,/5 planned minutes were skipped/);assert.match(win,/First Save unlocked/);assert.match(win,/Next: Week 1 · Session 2/);
-  const zero=renderToStaticMarkup(React.createElement(module.CompletionProgress,{summary:{...credited,completedPrescribedMinutes:0,skippedPrescribedMinutes:15,xp:0,attributes:{},newReward:null},pendingSync:false}));assert.match(zero,/earned no XP/);assert.doesNotMatch(zero,/First Save unlocked/);
+  const win=renderToStaticMarkup(React.createElement(loaded.CompletionProgress,{summary:credited,pendingSync:false}));assert.match(win,/10 XP earned/);assert.match(win,/5 planned minutes were skipped/);assert.match(win,/First Save unlocked/);assert.match(win,/Next: Week 1 · Session 2/);
+  const zero=renderToStaticMarkup(React.createElement(loaded.CompletionProgress,{summary:{...credited,completedPrescribedMinutes:0,skippedPrescribedMinutes:15,xp:0,attributes:{},newReward:null},pendingSync:false}));assert.match(zero,/earned no XP/);assert.doesNotMatch(zero,/First Save unlocked/);
 });
 
 test('first-run access shell exposes no inactive player navigation',async()=>{
