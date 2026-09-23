@@ -77,3 +77,7 @@ export const attributeProgressLedger=sqliteTable('attribute_progress_ledger',{
 export const rewardEntitlements=sqliteTable('reward_entitlements',{
  profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),rewardId:text('reward_id').notNull(),sourceCompletionId:text('source_completion_id').notNull().references(()=>missionCompletionLedger.id,{onDelete:'cascade'}),ruleVersion:text('rule_version').notNull().references(()=>progressionRuleVersions.version),awardedAt:text('awarded_at').notNull(),
 },t=>[primaryKey({columns:[t.profileId,t.rewardId]})]);
+
+export const trainingMeasurements=sqliteTable('training_measurements',{
+ id:text('id').primaryKey(),profileId:text('profile_id').notNull().references(()=>profiles.id,{onDelete:'cascade'}),protocolId:text('protocol_id').notNull(),attributeId:text('attribute_id').notNull(),metric:text('metric').notNull(),kind:text('kind').notNull(),value:integer('value').notNull(),valid:integer('valid',{mode:'boolean'}).notNull(),recordedAt:text('recorded_at').notNull(),sourceOperationKey:text('source_operation_key').notNull(),
+},t=>[uniqueIndex('idx_training_measurements_operation').on(t.profileId,t.sourceOperationKey),index('idx_training_measurements_profile_protocol').on(t.profileId,t.protocolId,t.recordedAt)]);
